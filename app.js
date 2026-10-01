@@ -20,13 +20,13 @@ const SERVN=Object.fromEntries(SERV.map(s=>[s.id,s]));
 const RSTATO={inviata:['In attesa di preventivo','p-warn'],preventivo:['Preventivo da valutare','p-info'],lavorazione:['In lavorazione','p-info'],consegnata:['Consegnata','p-ok'],annullata:['Annullata','p-mute']};
 const DSTATO={verificato:['Caricato da professionista','st-ok'],caricato:['Caricato dal proprietario','st-mute'],richiesto:['Da recuperare','st-warn']};
 const euro=n=>n==null?'':Number(n).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
-const TABLES=['profiles','immobili','accessi','documenti','richieste','condivisioni','eventi'];
+const TABLES=['profiles','immobili','accessi','documenti','richieste','condivisioni','eventi','passaggi'];
 const BUCKET='documenti';
 
 /* ---------- stato ---------- */
 let raf=0;
 const S={sb:null,state:'boot',session:null,data:Object.fromEntries(TABLES.map(t=>[t,{}])),
-  cur:null,view:'home',page:null,tab:'documenti',sez:'tutti',q:'',guest:null,guestData:null,guestPreview:false,seen:new Set(),authMode:'login',authMsg:''};
+  cur:null,view:'home',page:null,tab:'documenti',sez:'tutti',q:'',guest:null,guestData:null,selMode:false,sel:new Set(),pendingCode:null,shareIds:[],guestPreview:false,seen:new Set(),authMode:'login',authMsg:''};
 
 /* ---------- utilità ---------- */
 const $=s=>document.querySelector(s);
@@ -61,6 +61,9 @@ const I={
  qr:'<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg>',
  link:'<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>',
  eye:'<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+ check:'<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
+ key:'<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/></svg>',
+ share:'<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>',
  bell:'<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>'
 };
 const LOGO=(fill='#FFFFFF',slot='#0066CC',w=44)=>`<svg width="${w}" height="${Math.round(w*.75)}" viewBox="0 0 64 48" aria-hidden="true"><rect x="1" y="1" width="62" height="46" rx="7" fill="${fill}"/><rect x="7" y="9" width="22" height="27" rx="3" fill="${slot}"/><path d="M10.5 22.5L18 16l7.5 6.5" fill="none" stroke="${fill}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.8 21v10h10.4V21" fill="none" stroke="${fill}" stroke-width="2.2" stroke-linejoin="round"/><rect x="34" y="11" width="23" height="3.6" rx="1.8" fill="${slot}"/><rect x="34" y="18" width="16" height="3.6" rx="1.8" fill="${slot}" opacity=".55"/><rect x="34" y="25" width="19" height="3.6" rx="1.8" fill="${slot}" opacity=".55"/><rect x="34" y="33" width="6" height="3" fill="#009246"/><rect x="40" y="33" width="6" height="3" fill="#E6ECF2"/><rect x="46" y="33" width="6" height="3" fill="#CE2B37"/></svg>`;
@@ -82,6 +85,9 @@ async function loadAll(){
   res.forEach((r,i)=>{if(r.error){console.warn(TABLES[i],r.error);return}
     S.data[TABLES[i]]=Object.fromEntries(r.data.map(row=>{const o=toCamel(row);return [o.id,o]}))});
   S.state='ready';render();
+  if(S.pendingCode&&me()){const c=S.pendingCode;S.pendingCode=null;
+    if(PROF.includes(me().ruolo))openScan(true,fmtCode(c));
+    else modal('QR code di collegamento','<p>Questo QR code serve ai <b>professionisti</b> (agenzia, broker, tecnico, notaio) per collegarsi al fascicolo di un cliente. Hai effettuato l\'accesso come '+esc(RUOLO[me().ruolo]||'')+'.</p><p class="muted" style="font-size:14px">Se sei un familiare, chiedi al titolare di invitarti dalla scheda Accessi.</p>','<button type="button" class="btn btn-p" data-act="close">Ho capito</button>')}
 }
 let reloadT=0;
 function reloadSoon(){clearTimeout(reloadT);reloadT=setTimeout(()=>{if(S.session)loadAll()},250)}
@@ -108,6 +114,7 @@ async function boot(){
   if(!window.supabase||!cfg.SUPABASE_URL||/INCOLLA/.test(cfg.SUPABASE_URL)){S.state='config';render();return}
   S.sb=window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
   parseHash();
+  try{const c=normCode(new URLSearchParams(location.search).get('collega'));if(c){S.pendingCode=c;history.replaceState(null,'',location.pathname+location.hash)}}catch(e){}
   const {data:{session}}=await S.sb.auth.getSession();
   S.session=session;S.state=session?'loading':'auth';render();
   if(session)startData();
@@ -164,6 +171,7 @@ function authView(){
    <div class="fld"><label for="a-studio">Studio o società (facoltativo)</label><input id="a-studio" name="studio" autocomplete="organization"></div></div>`:''}
    <div class="fld"><label for="a-email">Email</label><input id="a-email" name="email" type="email" required autocomplete="email"></div>
    <div class="fld"><label for="a-pwd">Password</label><input id="a-pwd" name="pwd" type="password" required minlength="6" autocomplete="${reg?'new-password':'current-password'}"></div>
+   ${S.pendingCode?`<div class="note">${I.qr} Hai inquadrato un QR code di collegamento (<b class="code">${fmtCode(S.pendingCode)}</b>). Accedi o registrati come professionista: ti colleghiamo subito al fascicolo.</div>`:''}
    <p class="err" id="a-err" ${S.authMsg?'':'hidden'}>${esc(S.authMsg)}</p>
    <button class="btn btn-p" type="submit" id="a-ok">${reg?'Crea profilo':'Accedi'}</button>
    ${reg?'<p class="muted" style="font-size:13px">Se sei stato invitato in un fascicolo, registrati con la stessa email dell\'invito: lo troverai subito.</p>':''}
@@ -174,6 +182,7 @@ function shell(){
   if(S.cur&&!acc(S.cur))S.cur=null;
   const inc=incarichiMiei();
   const side=`<nav class="side" aria-label="Fascicoli">
+    ${pro?`<button class="btn btn-p side-scan" data-act="scan">${I.qr} Collega con QR</button>`:''}
     <h2>${pro?'Fascicoli dei clienti':'I miei immobili'}</h2>
     ${ims.map(i=>`<button class="side-item" data-act="open" data-id="${esc(i.id)}" aria-current="${S.view==='fascicolo'&&S.cur===i.id}"><b>${esc(i.tipo)} · ${esc(i.indirizzo)}</b><span>${esc(i.comune||'')} · ${esc(LIV[acc(i.id).livello])}</span></button>`).join('')||'<p class="muted" style="padding:4px 12px">Nessun fascicolo.</p>'}
     <button class="side-item" data-act="new-im"><b style="color:var(--brand)">+ ${pro?'Nuovo fascicolo per un cliente':'Aggiungi immobile'}</b></button>
@@ -192,13 +201,14 @@ function home(){
   const cards=ims.map(i=>{const a=acc(i.id),c=presenza(i.id),p=prossimaScadenza(i.id,a);return `<button class="card im-card" data-act="open" data-id="${esc(i.id)}">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="code muted">${esc(i.codice)}</span><span class="pill p-mute">${esc(LIV[a.livello])}</span></div>
     <h3>${esc(i.tipo)} · ${esc(i.indirizzo)}</h3><p class="muted">${esc(i.comune||'')}${i.categoria?' · Cat. '+esc(i.categoria):''}</p>
-    <p style="font-size:13px"><b class="num">${c.n}</b> documenti · sezioni con documenti: <b class="num">${c.sez} su 6</b></p>
+    <div class="im-pct"><span>Lista di base <b class="num">${lista(i.id).pct}%</b></span>${pctBar(lista(i.id).pct)}<small class="muted">${c.n} documenti nel fascicolo</small></div>
     <p style="font-size:13px">${p?`${esc(p.titolo)}: <span class="${daysTo(p.scadenza)<0?'st-crit':daysTo(p.scadenza)<=90?'st-warn':'st-ok'}">scade il ${fmt(p.scadenza)}</span>`:'<span class="muted">Nessuna scadenza</span>'}</p>
     ${i.esempio?'<span class="pill p-info" style="align-self:flex-start">Dati di esempio</span>':''}</button>`}).join('');
   const inc=incarichiMiei();
   const nome=(u.nome||'').split(' ').filter(w=>!/\./.test(w)&&w!=='Notaio')[0]||u.nome;
-  return `<div class="hello"><p class="eyebrow">${esc(RUOLO[u.ruolo]||'')}</p><h1>Ciao, ${esc(nome)}</h1>
+  return `${passaggiInArrivo()}<div class="hello"><p class="eyebrow">${esc(RUOLO[u.ruolo]||'')}</p><h1>Ciao, ${esc(nome)}</h1>
   <p class="lead">${pro?'Qui trovi i fascicoli dei clienti a cui hai accesso e gli incarichi arrivati dai servizi in app.':'Qui trovi i fascicoli dei tuoi immobili, con i documenti caricati dai professionisti.'}</p></div>
+  ${pro?proCta():''}
   ${cards?`<div class="grid-im">${cards}</div>`:`<div class="card empty"><h2>Nessun fascicolo ancora</h2><p class="lead">${pro?'Crea il fascicolo per un cliente indicando la sua email, oppure attendi che un proprietario ti inviti.':'Aggiungi il tuo immobile, oppure crea un fascicolo di esempio già compilato per vedere come funziona.'}</p>
    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center"><button class="btn btn-p" data-act="new-im">${I.plus} ${pro?'Nuovo fascicolo':'Aggiungi immobile'}</button>${pro?'':`<button class="btn btn-s" data-act="esempio">Crea un fascicolo di esempio</button>`}</div></div>`}
   ${cards&&!pro?`<p style="margin-top:16px"><button class="btn btn-g btn-sm" data-act="esempio">+ Crea un altro fascicolo di esempio</button></p>`:''}
@@ -218,14 +228,16 @@ function fascicolo(){
     <div class="t"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="eyebrow">Fascicolo immobile</span><span class="pill p-info code">${esc(i.codice)}</span>${i.esempio?'<span class="pill p-mute">Dati di esempio</span>':''}</div>
       <h1>${esc(i.tipo)} · ${esc(i.indirizzo)}</h1><p class="muted">${esc(i.comune||'')}${cat?' · '+esc(cat):''}</p>
       <p style="font-size:14px">Il tuo ruolo: <b>${esc(LIV[a.livello])}</b>${a.livello==='professionista'?' · sezioni: '+esc((a.sezioni||[]).map(s=>SEZN[s]).join(', '))+(a.scadenza?' · fino al '+fmt(a.scadenza):''):''}</p>
-      <div class="acts"><button class="btn btn-p" data-act="upload">${I.up} Carica documento</button><button class="btn btn-s" data-act="qr">${I.qr} Codice</button>${own?`<button class="btn btn-s" data-act="export">Scarica fascicolo</button>`:''}${canInvite(a)?`<button class="btn btn-s" data-act="invite">${I.plus} Invita</button>`:''}</div></div>
-    <div class="comp"><span class="muted" style="font-size:13px">Documenti presenti nel fascicolo</span><b class="num">${c.n}</b><span style="font-size:13px">Sezioni con documenti: <strong class="num">${c.sez} su 6</strong></span><span class="muted" style="font-size:12px">Indica dove ci sono documenti, non se il fascicolo è completo per una pratica.</span></div>
+      <div class="acts"><button class="btn btn-p" data-act="upload">${I.up} Carica documento</button><button class="btn btn-s" data-act="qr">${I.qr} ${canInvite(a)?'Codice e QR':'Codice'}</button>${own?`<button class="btn btn-s" data-act="export">Scarica fascicolo</button>`:''}${canInvite(a)?`<button class="btn btn-s" data-act="invite">${I.plus} Invita</button>`:''}</div></div>
+    ${compBlock(i,c,lista(i.id),own)}
   </section>
   <div class="tabs" role="tablist">${tabs.map(([k,n])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-id="${k}">${n}</button>`).join('')}</div>
   ${body}`;
 }
 function docRow(d){
   const st=DSTATO[d.stato]||DSTATO.caricato;
+  if(S.selMode){const can=!!d.filePath,on=S.sel.has(d.id);return `<button class="row pick${on?' on':''}" data-act="pick" data-id="${esc(d.id)}" aria-pressed="${on}" ${can?'':'disabled'}><span class="cbx">${on?I.check:''}</span>
+   <span style="min-width:0"><b>${esc(d.titolo)}</b><small>${esc(SEZN[d.sezione])} · ${d.dataDocumento?'del '+fmt(d.dataDocumento):'senza data'}${can?'':' · nessun file da condividere'}</small></span><span></span><span></span></button>`}
   return `<button class="row" data-act="${d.filePath?'view':'doc'}" data-id="${esc(d.id)}"><span class="ico ico-${esc(d.sezione)}">${I.file}</span>
    <span style="min-width:0"><b>${esc(d.titolo)}</b><small>${esc(SEZN[d.sezione])} · ${d.dataDocumento?'del '+fmt(d.dataDocumento):'senza data'}${d.fileName?' · '+esc(d.fileName):d.stato==='richiesto'?'':' · nessun file'}</small></span>
    <span class="rb">${badge(d.caricatoRuolo||user(d.caricatoDa)?.ruolo)}</span>
@@ -237,9 +249,11 @@ function tabDocumenti(i,a){
     .sort((x,y)=>(y.dataDocumento||y.createdAt||'').localeCompare(x.dataDocumento||x.createdAt||''));
   const chips=[['tutti','Tutti',all.length],...SEZ.filter(s=>allow.includes(s.id)).map(s=>[s.id,s.n,all.filter(d=>d.sezione===s.id).length])];
   return `<div class="tools">${chips.map(([k,n,c])=>`<button class="chip" data-act="sez" data-id="${k}" aria-pressed="${S.sez===k}">${esc(n)} <span class="num muted">${c}</span></button>`).join('')}</div>
-  <div class="tools"><label class="search" for="q">${I.search}<input id="q" type="search" placeholder="Cerca un documento" value="${esc(S.q)}" aria-label="Cerca un documento"></label></div>
+  <div class="tools"><label class="search" for="q">${I.search}<input id="q" type="search" placeholder="Cerca un documento" value="${esc(S.q)}" aria-label="Cerca un documento"></label>${canInvite(a)&&all.some(d=>d.filePath)?`<button class="btn btn-s btn-sm" data-act="selmode" aria-pressed="${S.selMode}">${S.selMode?'Fine selezione':I.share+' Seleziona e condividi'}</button>`:''}</div>
   <p class="muted" style="font-size:13px;margin:-4px 0 12px">Lo stato indica chi ha caricato il documento e quando. Casa ID non certifica contenuto, aggiornamento o conformità dei documenti.</p>
-  <div class="card list">${ds.map(docRow).join('')||`<div class="empty"><p class="lead">${all.length?'Nessun documento corrisponde alla ricerca.':'Ancora nessun documento in questo fascicolo.'}</p><button class="btn btn-p" data-act="upload">${I.up} Carica il primo documento</button></div>`}</div>`;
+  ${S.selMode?`<p class="note" style="margin-bottom:12px">Tocca i documenti da condividere, poi crea un unico link.</p>`:''}
+  <div class="card list">${ds.map(docRow).join('')||`<div class="empty"><p class="lead">${all.length?'Nessun documento corrisponde alla ricerca.':'Ancora nessun documento in questo fascicolo.'}</p><button class="btn btn-p" data-act="upload">${I.up} Carica il primo documento</button></div>`}</div>
+  ${S.selMode?`<div class="selbar" role="region" aria-label="Selezione"><span><b class="num">${S.sel.size}</b> ${S.sel.size===1?'documento selezionato':'documenti selezionati'}</span><span class="sp"></span><button class="btn btn-g btn-sm" data-act="selall">${ds.filter(d=>d.filePath).every(d=>S.sel.has(d.id))&&S.sel.size?'Deseleziona tutti':'Seleziona tutti'}</button><button class="btn btn-p btn-sm" data-act="share" ${S.sel.size?'':'disabled'}>${I.share} Condividi</button></div>`:''}`;
 }
 function tabScadenze(i,a){
   const ds=docsOf(i.id,a).filter(d=>d.scadenza).sort((x,y)=>x.scadenza.localeCompare(y.scadenza));
@@ -270,7 +284,7 @@ function tabAccessi(i,a){
     return `<div class="person"><span class="av r-${esc(ru)}">${esc(ini(u?.nome||p.email))}</span><div style="min-width:0"><b>${esc(u?.nome||p.email)}</b> ${u?badge(u.ruolo):'<span class="pill p-warn">Invito in attesa</span>'}<p class="muted" style="font-size:13px">${esc(p.email)} · ${esc(LIV[p.livello])}${p.livello==='professionista'?' · '+esc((p.sezioni||[]).map(s=>SEZN[s]).join(', ')):p.livello==='delegato'?(p.puoInvitare?' · può invitare professionisti':''):''}${p.scadenza?` · <span class="${scad?'st-crit':''}">${scad?'scaduto il':'fino al'} ${fmt(p.scadenza)}</span>`:''}${p.invitatoDa&&p.livello!=='titolare'?' · invitato da '+esc(uname(p.invitatoDa)):''}</p></div>${canRev?`<button class="btn btn-g btn-sm" data-act="revoke" data-id="${esc(p.id)}">Revoca</button>`:''}</div>`};
   const pending=ps.some(p=>!userByEmail(p.email));
   return `${pending?'<div class="note" style="margin-bottom:16px">Chi ha un invito in attesa vedrà il fascicolo appena si registra con quella email. Se un professionista non usa Casa ID, puoi caricare tu i documenti che ti ha consegnato.</div>':''}<div class="two"><section class="card"><div class="box-h"><h3>Persone con accesso</h3>${canInvite(a)?`<button class="btn btn-p btn-sm" data-act="invite">${I.plus} Invita</button>`:''}</div><div class="list">${ps.map(row).join('')}</div></section>
-  <section class="card"><div class="box-h"><h3>Link di sola lettura</h3>${canInvite(a)?`<button class="btn btn-s btn-sm" data-act="glink">${I.link} Crea link</button>`:''}</div><div class="list">${links.map(l=>{const exp=daysTo(l.scadenza)<0;return `<div class="person" style="grid-template-columns:minmax(0,1fr)"><div style="min-width:0"><b>${esc(l.etichetta)}</b><p class="muted" style="font-size:13px">${esc((l.sezioni||[]).map(s=>SEZN[s]).join(', '))} · <span class="${exp?'st-crit':''}">${exp?'scaduto':'scade'} il ${fmt(l.scadenza)}</span></p></div><div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-g btn-sm" data-act="gcopy" data-id="${esc(l.id)}">Copia link</button><button class="btn btn-g btn-sm" data-act="gprev" data-id="${esc(l.id)}">Anteprima</button>${canInvite(a)?`<button class="btn btn-g btn-sm" data-act="grevoke" data-id="${esc(l.id)}">Revoca</button>`:''}</div></div>`}).join('')||'<div class="empty"><p class="muted">Crea un link per la banca, l\'acquirente o l\'inquilino: vedono solo le sezioni che scegli, fino alla data che decidi, senza bisogno di registrarsi.</p></div>'}</div></section></div>`;
+  <section class="card"><div class="box-h"><h3>Link di sola lettura</h3>${canInvite(a)?`<button class="btn btn-s btn-sm" data-act="glink">${I.link} Crea link</button>`:''}</div><div class="list">${links.map(l=>{const exp=daysTo(l.scadenza)<0;return `<div class="person" style="grid-template-columns:minmax(0,1fr)"><div style="min-width:0"><b>${esc(l.etichetta)}</b><p class="muted" style="font-size:13px">${esc(l.documenti&&l.documenti.length?(l.documenti.length===1?'Documento: '+(S.data.documenti[l.documenti[0]]?.titolo||'1 documento'):l.documenti.length+' documenti scelti'):(l.sezioni||[]).map(s=>SEZN[s]).join(', '))} · <span class="${exp?'st-crit':''}">${exp?'scaduto':'scade'} il ${fmt(l.scadenza)}</span></p></div><div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-g btn-sm" data-act="gcopy" data-id="${esc(l.id)}">Copia link</button><button class="btn btn-g btn-sm" data-act="gprev" data-id="${esc(l.id)}">Anteprima</button>${canInvite(a)?`<button class="btn btn-g btn-sm" data-act="grevoke" data-id="${esc(l.id)}">Revoca</button>`:''}</div></div>`}).join('')||'<div class="empty"><p class="muted">Crea un link per la banca, l\'acquirente o l\'inquilino: vedono solo le sezioni che scegli, fino alla data che decidi, senza bisogno di registrarsi. Per singoli documenti usa «Condividi» dal documento o la selezione nella scheda Documenti.</p></div>'}</div></section></div>${passaggioBox(i,a)}`;
 }
 function tabRegistro(i){
   const evs=vals('eventi').filter(e=>e.immobileId===i.id).sort((x,y)=>(y.ts||'').localeCompare(x.ts||''));
@@ -315,11 +329,12 @@ function modal(title,body,foot='',form='',wide=false){
   m.innerHTML=form?`<form class="${cls}" role="dialog" aria-modal="true" aria-labelledby="m-t" data-form="${form}" novalidate>${inner}</form>`:`<div class="${cls}" role="dialog" aria-modal="true" aria-labelledby="m-t">${inner}</div>`;
   m.hidden=false;const f=m.querySelector('input:not([type=hidden]):not([disabled]),select,textarea');(f||m.querySelector('.x')).focus();
 }
-function closeModal(){$('#modal').hidden=true;$('#modal').innerHTML='';V.doc=null}
+function closeModal(){stopQ();$('#modal').hidden=true;$('#modal').innerHTML='';V.doc=null}
 const secCheckboxes=(name,allowed,checked)=>`<div class="checks">${SEZ.filter(s=>allowed.includes(s.id)).map(s=>`<label><input type="checkbox" name="${name}" value="${s.id}" ${checked.includes(s.id)?'checked':''}> ${esc(s.n)}</label>`).join('')}</div>`;
 
 function openUpload(opts={}){
   const imId=opts.immobileId||S.cur,a=acc(imId),allow=opts.sezione?[opts.sezione]:sezOf(a);
+  if(opts.voce&&VOCIN[opts.voce]){opts.titolo=opts.titolo||VOCIN[opts.voce].n}
   modal(opts.richiestaId?'Consegna della pratica':'Carica documento',`
    ${opts.richiestaId?`<div class="note">Stai consegnando: <b>${esc(SERVN[opts.servizio]?.n||'')}</b>. Il documento andrà nel fascicolo del cliente, sezione ${esc(SEZN[allow[0]])}.</div>`:''}
    <input type="hidden" name="richiestaId" value="${esc(opts.richiestaId||'')}"><input type="hidden" name="immobileId" value="${esc(imId)}">
@@ -327,10 +342,15 @@ function openUpload(opts={}){
    <div class="fgrid"><div class="fld"><label for="u-sez">Sezione</label><select id="u-sez" name="sezione">${SEZ.filter(s=>allow.includes(s.id)).map(s=>`<option value="${s.id}">${esc(s.n)}</option>`).join('')}</select></div>
    <div class="fld"><label for="u-data">Data del documento</label><input id="u-data" name="dataDocumento" type="date" value="${today()}"></div>
    <div class="fld"><label for="u-scad">Scadenza (facoltativa)</label><input id="u-scad" name="scadenza" type="date"></div></div>
+   <div class="fld"><label for="u-voce">Tipo per la lista di base</label><select id="u-voce" name="voce"><option value="">Altro documento</option>${VOCI.map(v=>`<option value="${v.id}" ${opts.voce===v.id?'selected':''}>${esc(v.n)}</option>`).join('')}</select><span class="muted" style="font-size:13px">Serve a calcolare la percentuale della lista di base.</span></div>
    <div class="fld"><label for="u-file">File</label><input id="u-file" name="file" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"><span class="muted" style="font-size:13px">PDF o immagine, fino a 20 MB. Usa solo documenti di prova.</span></div>
    <div class="fld"><label for="u-note">Note (facoltative)</label><textarea id="u-note" name="note" placeholder="Es. protocollo, riferimento pratica"></textarea></div>
    <p class="err" id="u-err" hidden></p>`,
    `<button type="button" class="btn btn-s" data-act="close">Annulla</button><button type="submit" class="btn btn-p" id="u-ok">${I.up} ${opts.richiestaId?'Consegna':'Carica'}</button>`,'upload');
+  const t=$('#u-titolo'),vs=$('#u-voce'),ss=$('#u-sez');let touched=!!opts.voce;
+  if(opts.voce&&VOCIN[opts.voce]&&ss&&allow.includes(VOCIN[opts.voce].sez))ss.value=VOCIN[opts.voce].sez;
+  vs.addEventListener('change',()=>{touched=true;const v=VOCIN[vs.value];if(v&&ss&&allow.includes(v.sez))ss.value=v.sez});
+  t.addEventListener('input',()=>{if(touched)return;const v=VOCI.find(x=>x.re.test(t.value));vs.value=v?v.id:'';if(v&&ss&&allow.includes(v.sez))ss.value=v.sez});
 }
 function openDoc(id){
   const d=S.data.documenti[id];if(!d)return;const a=acc(d.immobileId);
@@ -399,9 +419,6 @@ function openQuote(rid){
    <p class="err" id="q-err" hidden></p>`,
    `<button type="button" class="btn btn-s" data-act="close">Annulla</button><button type="submit" class="btn btn-p" id="q-ok">Invia preventivo</button>`,'quote');
 }
-function openCode(){const i=S.data.immobili[S.cur];
-  modal('Codice Casa ID',`<div style="display:flex;flex-direction:column;gap:10px"><span class="muted">Codice del fascicolo</span><b class="code" style="font-size:28px">${esc(i.codice)}</b><p style="font-size:14px">Il codice identifica questo fascicolo dentro Casa ID, per esempio quando ne parli con un professionista o con l'assistenza.</p><p class="muted" style="font-size:14px">Non è un dato catastale, non sostituisce foglio, particella e subalterno e non ha valore di attestazione ufficiale.</p><button type="button" class="btn btn-s btn-sm" style="align-self:flex-start" data-act="copy" data-id="${esc(i.codice)}">Copia codice</button></div>`,
-  `<button type="button" class="btn btn-p" data-act="close">Chiudi</button>`)}
 /* ---------- visualizzatore in app ---------- */
 const PDFJS='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
 function loadScript(src){return new Promise((ok,ko)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>ko(new Error('script'));document.head.appendChild(s)})}
@@ -417,7 +434,7 @@ async function openViewer(id){
   const isPdf=(d.fileType||'').includes('pdf')||/\.pdf$/i.test(d.fileName||'');
   modal(d.titolo,`<div class="vbar"><span class="muted" style="font-size:13px">${esc(d.fileName||'')} · ${size(d.size)}</span><span class="sp"></span>${isPdf?`<span class="muted num" id="v-pages"></span><button type="button" class="btn btn-s btn-sm" data-act="zoom" data-id="-1" aria-label="Riduci">−</button><button type="button" class="btn btn-s btn-sm" data-act="zoom" data-id="1" aria-label="Ingrandisci">+</button>`:''}</div>
    <div class="viewer" id="viewer"><p class="vmsg">Apro il documento…</p></div>`,
-   `${S.guest?'':`<button type="button" class="btn btn-g" data-act="doc" data-id="${esc(id)}" style="margin-right:auto">Dettagli</button>`}<button type="button" class="btn btn-s" data-act="dl" data-id="${esc(id)}">Scarica</button><button type="button" class="btn btn-p" data-act="close">Chiudi</button>`,'',true);
+   `${S.guest?'':`<button type="button" class="btn btn-g" data-act="doc" data-id="${esc(id)}" style="margin-right:auto">Dettagli</button>`}${!S.guest&&canInvite(acc(d.immobileId))?`<button type="button" class="btn btn-s" data-act="share" data-id="${esc(id)}">${I.share} Condividi</button>`:''}<button type="button" class="btn btn-s" data-act="dl" data-id="${esc(id)}">Scarica</button><button type="button" class="btn btn-p" data-act="close">Chiudi</button>`,'',true);
   if(!S.seen.has('v'+id)){S.seen.add('v'+id);if(S.guest&&!S.guestPreview)S.sb.rpc('guest_log',{token:S.guest,azione:`ha visualizzato «${d.titolo}»`});else if(!S.guest)evento(d.immobileId,`ha visualizzato il file di «${d.titolo}»`)}
   const box=document.getElementById('viewer');
   try{
@@ -455,13 +472,15 @@ const FAQ=[
   ['Posso gestire più immobili?','Sì. Ogni immobile ha il suo fascicolo, con documenti e accessi separati.']]],
  ['Documenti e attendibilità',[
   ['Casa ID verifica i documenti?','No. Ogni documento mostra chi l\'ha caricato e quando. Contenuto, aggiornamento e conformità restano responsabilità di chi li ha prodotti. «Caricato da professionista» indica chi ha caricato il file, non una verifica tecnica.'],
-  ['Il fascicolo è completo?','Casa ID mostra quanti documenti ci sono e in quali sezioni. Non valuta se bastano per una vendita, un mutuo o una pratica: per questo serve il professionista che segue l\'operazione.'],
+  ['Cosa indica la percentuale?','Quanti documenti della lista di base di Casa ID sono presenti: atto di provenienza, visura, planimetria, titolo edilizio, conformità urbanistica, agibilità, APE, conformità degli impianti, libretto d\'impianto, regolamento di condominio. Il titolare può segnare una voce come non applicabile. È un riferimento: non dice se il fascicolo basta per una vendita, un mutuo o una pratica, né se i documenti sono corretti.'],
   ['Come recupero un documento che manca?','Dalla scheda Servizi chiedi un preventivo (visura, ispezione ipotecaria, accesso agli atti, APE, CDU, copia di atto). Il professionista indica costo totale e tempi; si procede solo se accetti. I tempi dipendono anche dagli enti.'],
   ['Banca e notaio accettano il fascicolo?','Puoi mandare loro un link di sola lettura alle sezioni utili. Non esistono accordi con banche o notai: se e come useranno i documenti va concordato con loro.'],
   ['Il codice Casa ID ha valore ufficiale?','No. Identifica il fascicolo dentro Casa ID. Non è un dato catastale e non sostituisce visure o atti.']]],
  ['Accessi e privacy',[
   ['Chi può vedere i miei documenti?','Solo le persone che inviti, nelle sezioni e fino alla data che scegli, e chi apre un link di sola lettura che hai creato, finché non scade o lo revochi. Registrarsi su Casa ID non dà accesso ai fascicoli degli altri.'],
   ['Che differenza c\'è tra titolare, delegato e professionista?','Il titolare gestisce tutto. Il delegato (per esempio un familiare) vede tutto e, se lo consenti, può invitare professionisti. Il professionista vede e carica solo nelle sezioni indicate, fino alla scadenza.'],
+  ['Come si collega un professionista con il QR code?','Da «Codice e QR» scegli le sezioni e la durata e generi un QR code. Il professionista tocca «Collega con QR» in Casa ID e lo inquadra, oppure digita il codice scritto sotto. Il QR vale 15 minuti e per una sola persona; l\'accesso compare nella scheda Accessi e puoi revocarlo quando vuoi.'],
+  ['Posso condividere un solo documento?','Sì. Dal documento aperto tocca «Condividi», oppure usa «Seleziona e condividi» per sceglierne più di uno: crei un unico link di sola lettura con una scadenza, da inviare via WhatsApp, email o copiandolo.'],
   ['Cosa succede quando revoco un accesso?','Da quel momento la persona o il link non vedono più il fascicolo. Chi ha già scaricato un documento ne conserva la copia.'],
   ['Dove sono conservati i file?','In un archivio privato su server nell\'Unione Europea, accessibile solo secondo i permessi del fascicolo. I dati non sono venduti né usati per pubblicità.']]],
  ['Costi e servizi',[
@@ -471,7 +490,7 @@ const FAQ=[
  ['Continuità',[
   ['Posso scaricare tutti i documenti?','Sì. Titolare e delegati usano «Scarica fascicolo»: ottieni un file ZIP con i documenti divisi per sezione e un indice leggibile con Excel. Puoi farlo in qualsiasi momento.'],
   ['Se disdico, perdo i documenti?','Puoi scaricare l\'intero fascicolo prima di disdire. Le regole su conservazione e cancellazione dopo la disdetta saranno pubblicate nelle condizioni del servizio.'],
-  ['Se vendo la casa, il fascicolo passa all\'acquirente?','Oggi no: il passaggio della titolarità non è disponibile. Puoi invitare l\'acquirente, condividere un link alle sezioni utili o consegnargli il fascicolo scaricato.'],
+  ['Se vendo la casa, il fascicolo passa all\'acquirente?','Sì: il fascicolo appartiene all\'immobile. Dalla scheda Accessi avvii il «Passaggio di proprietà» indicando l\'email dell\'acquirente; quando lui accetta diventa titolare con documenti, scadenze e codice Casa ID. Tu e le persone che avevi invitato perdete l\'accesso; registro, link e richieste restano riservati e non passano. Prima puoi scaricare una copia. Casa ID non verifica l\'atto di vendita.'],
   ['Mi avvisate delle scadenze?','Oggi le scadenze inserite nei documenti (APE, caldaia, contratti) sono raccolte in un\'unica lista. Gli avvisi via email non sono ancora attivi. Casa ID non verifica gli adempimenti.']]],
  ['Sulla demo',[
   ['Posso caricare documenti veri?','No. Questa è una versione di prova: usa solo documenti di esempio, senza dati reali tuoi o di altre persone.'],
@@ -497,7 +516,8 @@ function esempioView(){
   <section class="card fhead"><div class="t"><span class="eyebrow">Fascicolo immobile · esempio</span><h1>${e.tipo} · ${e.indirizzo}</h1><p class="muted">${e.comune} · ${e.cat}</p>
    <p style="font-size:15px">Così appare un fascicolo dopo qualche settimana: il notaio ha caricato gli atti, l'agenzia il catasto, il tecnico le pratiche e l'APE; il proprietario la garanzia della caldaia. Il certificato di agibilità manca ed è da recuperare.</p>
    <div class="acts"><button class="btn btn-p" data-act="page" data-id="">Crea il tuo fascicolo</button><button class="btn btn-s" data-act="page" data-id="faq">Domande frequenti</button></div></div>
-   <div class="comp"><span class="muted" style="font-size:13px">Documenti presenti nel fascicolo</span><b class="num">8</b><span style="font-size:13px">Sezioni con documenti: <strong>5 su 6</strong></span></div></section>
+   ${(()=>{const docs=e.docs.map(([t,sez,dt,sc,r,st])=>({titolo:t,sezione:sez,stato:st})),pres=docs.filter(d=>d.stato!=='richiesto'),l=(()=>{const voci=VOCI.map(v=>({...v,docs:pres.filter(d=>voceDi(d)===v.id)}));const ok=voci.filter(v=>v.docs.length).length;return {ok,tot:VOCI.length,pct:Math.round(ok*100/VOCI.length)}})();
+   return `<div class="comp"><span class="muted" style="font-size:13px">Completamento della lista di base</span><span class="pct"><b class="num">${l.pct}%</b><span class="muted">${l.ok} di ${l.tot} documenti</span></span>${pctBar(l.pct)}<span style="font-size:13px">Documenti nel fascicolo: <strong>${pres.length}</strong></span><span class="muted" style="font-size:12px">La lista di base è un riferimento di Casa ID: non dice se il fascicolo basta per una vendita o una pratica.</span></div>`})()}</section>
   <h2 class="section-t">1 · Ritrovi i documenti</h2><p class="muted" style="font-size:14px;margin-bottom:12px">Ogni documento mostra chi l'ha caricato e la sua data. Lo stato non è una certificazione.</p><div class="card list">${ds}</div>
   <h2 class="section-t">2 · Tieni d'occhio le scadenze inserite</h2><div class="card list"><div class="deadline"><div class="d"><span>mar</span><b class="num">2028</b></div><div><b>Attestato di prestazione energetica</b><p class="muted" style="font-size:13px">Data inserita dal tecnico che ha caricato l'APE</p></div><span class="pill p-ok">In regola</span></div><div class="deadline"><div class="d"><span>ott</span><b class="num">2028</b></div><div><b>Garanzia della caldaia</b><p class="muted" style="font-size:13px">Data inserita dal proprietario</p></div><span class="pill p-ok">In regola</span></div></div>
   <h2 class="section-t">3 · Decidi chi vede cosa, e fino a quando</h2><div class="card list">${e.accessi.map(([n,r,d])=>`<div class="person"><span class="av r-${r||'proprietario'}">${esc(ini(n))}</span><div><b>${esc(n)}</b> ${badge(r)}<p class="muted" style="font-size:13px">${esc(d)}</p></div><span class="muted" style="font-size:13px">${r==='proprietario'?'':'revocabile'}</span></div>`).join('')}</div>
@@ -534,6 +554,202 @@ async function exportFascicolo(btn){
   finally{btn.disabled=false;btn.textContent=old}
 }
 
+/* ---------- lista dei documenti di base (percentuale) ---------- */
+const VOCI=[
+ {id:'provenienza',n:'Atto di provenienza',d:'Rogito, donazione o successione',sez:'atti',re:/rogito|compravendita|provenienza|donazione|successione|atto (di|notarile)/i,serv:'copia-atto'},
+ {id:'visura',n:'Visura catastale',d:'Meglio la visura storica',sez:'catasto',re:/visura/i,serv:'visura'},
+ {id:'planimetria',n:'Planimetria catastale',d:'Quella depositata al Catasto',sez:'catasto',re:/planimetri/i,serv:'visura'},
+ {id:'titolo',n:'Titolo edilizio',d:'Licenza, concessione, permesso, condono, SCIA o CILA',sez:'urbanistica',re:/licenza|concessione|permesso di costruire|condono|\bscia\b|\bcila\b|\bdia\b|titolo edilizio/i,serv:'accesso-atti'},
+ {id:'conformita',n:'Conformità urbanistica',d:'Relazione o attestazione di stato legittimo',sez:'urbanistica',re:/conformit[aà] urbanistic|relazione di conformit|stato legittimo|regolarit[aà] urbanistic/i,serv:'accesso-atti'},
+ {id:'agibilita',n:'Agibilità o abitabilità',d:'Certificato o segnalazione certificata',sez:'urbanistica',re:/agibilit|abitabilit/i,serv:'accesso-atti'},
+ {id:'ape',n:'APE',d:'Attestato di prestazione energetica',sez:'impianti',re:/\bape\b|prestazione energetica/i,serv:'ape'},
+ {id:'impianti',n:'Conformità degli impianti',d:'Dichiarazioni di conformità (elettrico, gas, termico)',sez:'impianti',re:/dichiarazion[ei] di conformit|\bdi\.?co\b|conformit[aà] (dell'|degli )?impiant/i},
+ {id:'libretto',n:'Libretto d\'impianto',d:'Caldaia o climatizzazione',sez:'impianti',re:/libretto/i},
+ {id:'condominio',n:'Regolamento di condominio',d:'Se l\'immobile è in condominio',sez:'condominio',re:/regolamento/i}];
+const VOCIN=Object.fromEntries(VOCI.map(v=>[v.id,v]));
+const voceDi=d=>d.voce&&VOCIN[d.voce]?d.voce:(VOCI.find(v=>v.re.test(d.titolo||''))||{}).id||null;
+function lista(imId,docs){
+ const i=S.data.immobili[imId]||{},na=i.vociNa||[];
+ const ds=(docs||vals('documenti').filter(d=>d.immobileId===imId)).filter(d=>d.stato!=='richiesto');
+ const voci=VOCI.map(v=>({...v,na:na.includes(v.id),docs:ds.filter(d=>voceDi(d)===v.id)}));
+ const app=voci.filter(v=>!v.na),ok=app.filter(v=>v.docs.length).length;
+ return {voci,ok,tot:app.length,pct:app.length?Math.round(ok*100/app.length):100};
+}
+const pctBar=p=>`<span class="pbar" role="img" aria-label="${p}%"><i style="width:${p}%"></i></span>`;
+function compBlock(i,c,l,own){
+ return `<div class="comp"><span class="muted" style="font-size:13px">Completamento della lista di base</span>
+  <span class="pct"><b class="num">${l.pct}%</b><span class="muted">${l.ok} di ${l.tot} documenti</span></span>${pctBar(l.pct)}
+  <button type="button" class="btn btn-g btn-sm" style="align-self:flex-start;padding-inline:0" data-act="lista">${l.ok<l.tot?'Vedi cosa manca':'Vedi la lista'}</button>
+  <span style="font-size:13px">Documenti nel fascicolo: <strong class="num">${c.n}</strong> · sezioni: <strong class="num">${c.sez} su 6</strong></span>
+  <span class="muted" style="font-size:12px">La lista di base è un riferimento di Casa ID: non dice se il fascicolo basta per una vendita o una pratica.</span></div>`;
+}
+function openLista(){
+ const i=S.data.immobili[S.cur],a=acc(S.cur),own=a&&a.livello==='titolare',l=lista(i.id),allow=sezOf(a);
+ modal('Lista dei documenti di base',`<div class="pct-head"><b class="num">${l.pct}%</b><span>${l.ok} di ${l.tot} documenti presenti${l.voci.some(v=>v.na)?` · ${l.voci.filter(v=>v.na).length} non applicabili`:''}</span></div>${pctBar(l.pct)}
+  <div class="card list voci">${l.voci.map(v=>{const has=v.docs.length;return `<div class="voce${v.na?' na':''}"><span class="vk ${has?'ok':v.na?'na':'no'}">${has?I.check:v.na?'–':''}</span>
+   <div style="min-width:0"><b>${esc(v.n)}</b><small>${has?esc(v.docs.map(d=>d.titolo).join(', ')):v.na?'Non applicabile a questo immobile':esc(v.d)}</small></div>
+   <div class="va">${!has&&!v.na&&allow.includes(v.sez)?`<button type="button" class="btn btn-s btn-sm" data-act="vup" data-id="${v.id}">Carica</button>`:''}${!has&&!v.na&&v.serv&&isOwnerLike(a)?`<button type="button" class="btn btn-g btn-sm" data-act="vreq" data-id="${v.serv}">Preventivo</button>`:''}${own&&!has?`<button type="button" class="btn btn-g btn-sm" data-act="vna" data-id="${v.id}">${v.na?'Ripristina':'Non applicabile'}</button>`:''}</div></div>`}).join('')}</div>
+  <p class="muted" style="font-size:13px">Un documento conta quando è caricato con il tipo corrispondente o quando il titolo lo indica chiaramente. Casa ID non ne controlla contenuto, aggiornamento o conformità.</p>`,
+  `<button type="button" class="btn btn-p" data-act="close">Chiudi</button>`);
+}
+
+/* ---------- QR code: collegamento del professionista ---------- */
+const QRGEN='https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js',JSQR='https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+const libs=new Map();
+function ensureLib(src){if(!libs.has(src))libs.set(src,loadScript(src).catch(e=>{libs.delete(src);throw e}));return libs.get(src)}
+const Q={timer:0,poll:0,stream:null,raf:0,busy:false,bad:'',badT:0};
+function stopQ(){clearInterval(Q.timer);clearInterval(Q.poll);Q.timer=Q.poll=0;if(Q.stream){Q.stream.getTracks().forEach(t=>t.stop());Q.stream=null}cancelAnimationFrame(Q.raf);Q.raf=0;Q.busy=false}
+const COD_RE=/^[A-HJ-NP-Z2-9]{10}$/;
+function normCode(t){t=String(t||'').trim();const m=/[?&]collega=([A-Za-z0-9-]+)/.exec(t);if(m)t=m[1];t=t.toUpperCase().replace(/[^A-Z0-9]/g,'');return COD_RE.test(t)?t:null}
+const fmtCode=c=>c.slice(0,5)+'-'+c.slice(5);
+const collegaUrl=c=>location.origin+location.pathname+'?collega='+c;
+function openCode(){const i=S.data.immobili[S.cur],a=acc(S.cur),can=canInvite(a);
+ modal(can?'Codice e QR code':'Codice Casa ID',`
+  <div class="codehead"><div><span class="muted" style="font-size:13px">Codice del fascicolo</span><b class="code" style="font-size:20px;display:block">${esc(i.codice)}</b></div><button type="button" class="btn btn-g btn-sm" data-act="copy" data-id="${esc(i.codice)}">Copia</button></div>
+  <p class="muted" style="font-size:13px;margin-top:-6px">Identifica il fascicolo dentro Casa ID. Non è un dato catastale e non ha valore ufficiale.</p>
+  ${can?`<div><h3 style="font-size:18px">Collega un professionista con il QR code</h3><p style="font-size:14px;color:var(--ink-2);margin-top:4px">Il professionista inquadra il QR dall'app Casa ID e si ritrova subito nel fascicolo, con le sezioni e la durata che scegli qui. Il QR vale 15 minuti e per una sola persona.</p></div>
+  <div class="fld"><span class="lbl">Sezioni che potrà vedere e aggiornare</span>
+   <div class="presets"><span class="muted">Scelta rapida:</span>${['tecnico','notaio','agenzia','broker'].map(r=>`<button type="button" class="chip" data-act="qpreset" data-id="${r}">${esc(RUOLO_BREVE[r]||RUOLO[r])}</button>`).join('')}</div>
+   ${secCheckboxes('sezioni',SEZ.map(s=>s.id),[])}</div>
+  <div class="fld"><label for="c-days">Accesso valido per</label><select id="c-days" name="giorni"><option value="30">30 giorni</option><option value="60" selected>60 giorni</option><option value="90">90 giorni</option><option value="180">6 mesi</option><option value="365">1 anno</option></select></div>
+  <p class="err" id="c-err" hidden></p>`:''}`,
+  can?`<button type="button" class="btn btn-s" data-act="close">Chiudi</button><button type="submit" class="btn btn-p" id="c-ok">${I.qr} Genera QR code</button>`:`<button type="button" class="btn btn-p" data-act="close">Chiudi</button>`,can?'qrgen':'');
+ $('#modal .x').focus();
+}
+async function showQr(c,sez,giorni){
+ const imId=S.cur;
+ modal('Fai inquadrare questo QR code',`<div class="qr-wrap"><div class="qrbox big" id="qr-img"><p class="vmsg">Preparo il QR code…</p></div>
+  <div class="qr-code-txt"><span class="muted" style="font-size:13px">oppure il professionista digita il codice</span><b class="code">${fmtCode(c.codice)}</b></div>
+  <p class="qr-timer" id="qr-timer" aria-live="polite"></p></div>
+  <dl class="kv"><dt>Sezioni</dt><dd>${esc(sez.map(s=>SEZN[s]).join(', '))}</dd><dt>Accesso</dt><dd>per ${giorni} giorni dal collegamento, revocabile quando vuoi</dd></dl>
+  <p class="muted" style="font-size:13px">Il professionista apre Casa ID e tocca «Collega con QR», oppure inquadra il codice con la fotocamera del telefono. Ti avvisiamo qui appena si collega.</p>`,
+  `<button type="button" class="btn btn-s" data-act="qr">Nuovo QR code</button><button type="button" class="btn btn-p" data-act="close">Chiudi</button>`);
+ const box=$('#qr-img');
+ try{await ensureLib(QRGEN);if(!box.isConnected)return;const q=qrcode(0,'M');q.addData(collegaUrl(c.codice));q.make();
+   box.innerHTML=q.createSvgTag({cellSize:8,margin:2,scalable:true});const svg=box.querySelector('svg');if(svg){svg.setAttribute('role','img');svg.setAttribute('aria-label','QR code di collegamento '+fmtCode(c.codice))}}
+ catch(e){box.innerHTML='<p class="vmsg">Non riesco a disegnare il QR code: usa il codice qui sotto.</p>'}
+ const end=Date.parse(c.validoFino||c.valido_fino),tick=()=>{const t=$('#qr-timer');if(!t){stopQ();return}const r=end-Date.now();
+   if(r<=0){stopQ();box.classList.add('expired');t.className='qr-timer exp';t.textContent='QR code scaduto: generane uno nuovo.';return}
+   const m=Math.floor(r/60000),s=Math.floor(r%60000/1000);t.className='qr-timer'+(r<120000?' low':'');t.textContent=`Valido ancora ${m}:${String(s).padStart(2,'0')}`};
+ tick();Q.timer=setInterval(tick,1000);
+ Q.poll=setInterval(async()=>{try{const {data}=await S.sb.from('collegamenti').select('usato_da,usato_il').eq('id',c.id).single();
+   if(data&&data.usato_da){stopQ();await loadAll();const u=user(data.usato_da),p=acc(imId,u?.email);
+     modal('Professionista collegato',`<div class="done"><span class="tick">${I.check}</span><h3>${esc(u?.nome||'Il professionista')} si è collegato</h3><p class="muted">${esc(RUOLO[u?.ruolo]||'')}${u?.studio?' · '+esc(u.studio):''}</p></div>
+      <dl class="kv"><dt>Sezioni</dt><dd>${esc((p?.sezioni||sez).map(s=>SEZN[s]).join(', '))}</dd><dt>Fino al</dt><dd>${p?.scadenza?fmt(p.scadenza):'—'}</dd></dl>
+      <p class="muted" style="font-size:13px">Lo trovi nella scheda Accessi, dove puoi revocarlo quando vuoi.</p>`,
+      `<button type="button" class="btn btn-s" data-act="tab" data-id="accessi">Vai agli accessi</button><button type="button" class="btn btn-p" data-act="close">Fatto</button>`)}}catch(e){}},3000);
+}
+function openScan(manual=false,prefill=''){
+ modal('Collega un immobile',`
+  ${manual?'':`<div class="scan" id="scan"><video id="scan-v" playsinline muted autoplay></video><div class="scan-frame" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="scan-line"></span></div><p class="scan-msg" id="scan-msg">Attivo la fotocamera…</p></div>
+  <p style="font-size:14px;text-align:center;color:var(--ink-2)">Inquadra il QR code che il proprietario ti mostra in Casa ID.</p>
+  <div class="or"><span>oppure</span></div>`}
+  <div class="fld"><label for="s-code">Codice di collegamento</label><input id="s-code" name="codice" class="code-in" placeholder="ABCDE-FGHJK" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="11" value="${esc(prefill)}"><span class="muted" style="font-size:13px">È scritto sotto il QR code, sullo schermo del proprietario. Vale 15 minuti.</span></div>
+  <p class="err" id="s-err" hidden></p>`,
+  `<button type="button" class="btn btn-s" data-act="close">Annulla</button><button type="submit" class="btn btn-p" id="s-ok">Collega</button>`,'scan');
+ const inp=$('#s-code');inp.addEventListener('input',()=>{const v=inp.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,10);inp.value=v.length>5?v.slice(0,5)+'-'+v.slice(5):v});
+ if(!manual){$('#modal .x').focus();startCamera()}
+}
+function scanMsg(t){const m=$('#scan-msg');if(m)m.textContent=t||''}
+async function startCamera(){
+ if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){camFail('Questo browser non permette di usare la fotocamera. Inserisci il codice qui sotto.');return}
+ try{
+  const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+  const v=$('#scan-v');if(!v){stream.getTracks().forEach(t=>t.stop());return}
+  Q.stream=stream;v.srcObject=stream;try{await v.play()}catch(e){}
+  let det=null;
+  if('BarcodeDetector' in window){try{const f=await BarcodeDetector.getSupportedFormats();if(f.includes('qr_code'))det=new BarcodeDetector({formats:['qr_code']})}catch(e){}}
+  if(!det)await ensureLib(JSQR);
+  if(!Q.stream)return;
+  $('#scan').classList.add('live');scanMsg('');
+  const cv=document.createElement('canvas'),cx=cv.getContext('2d',{willReadFrequently:true});let last=0;
+  const tick=async t=>{if(!Q.stream)return;Q.raf=requestAnimationFrame(tick);if(Q.busy||t-last<160||v.readyState<2||!v.videoWidth)return;last=t;
+   let txt=null;
+   try{if(det){const r=await det.detect(v);txt=r[0]&&r[0].rawValue}
+    else{const w=Math.min(800,v.videoWidth),h=Math.round(v.videoHeight*w/v.videoWidth);cv.width=w;cv.height=h;cx.drawImage(v,0,0,w,h);const r=jsQR(cx.getImageData(0,0,w,h).data,w,h,{inversionAttempts:'dontInvert'});txt=r&&r.data}}catch(e){}
+   if(txt)onScan(txt)};
+  Q.raf=requestAnimationFrame(tick);
+ }catch(e){camFail(e&&e.name==='NotAllowedError'?'Accesso alla fotocamera negato. Puoi consentirlo dalle impostazioni del browser, oppure inserire il codice qui sotto.':'Non riesco ad attivare la fotocamera. Inserisci il codice qui sotto.')}
+}
+function camFail(t){const s=$('#scan');if(s){s.classList.add('off');scanMsg(t)}}
+function onScan(txt){const c=normCode(txt);
+ if(!c){if(Date.now()-Q.badT>2500){Q.badT=Date.now();scanMsg('Questo QR code non è un codice Casa ID')}return}
+ if(c===Q.bad&&Date.now()-Q.badT<5000)return;
+ Q.busy=true;try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}
+ $('#scan')&&$('#scan').classList.add('hit');const inp=$('#s-code');if(inp)inp.value=fmtCode(c);redeem(c)}
+async function redeem(c){
+ scanMsg('Collegamento in corso…');const b=$('#s-ok');busy(b,'Collego…');
+ const {data,error}=await S.sb.rpc('usa_collegamento',{p_codice:c});
+ if(error){busy(b);showErr('s-err',errMsg(error));Q.bad=c;Q.badT=Date.now();Q.busy=false;const s=$('#scan');if(s)s.classList.remove('hit');scanMsg('');return}
+ stopQ();await loadAll();closeModal();
+ const d=data||{};S.cur=d.immobile_id;S.view='fascicolo';S.tab='documenti';S.sez='tutti';S.q='';render();scrollTo(0,0);
+ modal('Sei collegato',`<div class="done"><span class="tick">${I.check}</span><h3>${esc((d.tipo||'')+' · '+(d.indirizzo||''))}</h3><p class="muted">${esc(d.comune||'')}</p></div>
+  <dl class="kv"><dt>Sezioni</dt><dd>${esc((d.sezioni||[]).map(s=>SEZN[s]).join(', '))}</dd><dt>Fino al</dt><dd>${d.scadenza?fmt(d.scadenza):'—'}</dd></dl>
+  <p class="muted" style="font-size:13px">Il fascicolo ora è tra i tuoi. Il proprietario vede che ti sei collegato e può revocare l'accesso.</p>`,
+  `<button type="button" class="btn btn-p" data-act="close">Apri il fascicolo</button>`);
+}
+function proCta(){return `<div class="card cta"><span class="cta-ico">${I.qr}</span><div style="flex:1;min-width:200px"><h3>Collega un immobile</h3><p class="muted" style="font-size:14px">Dal cliente: inquadri il QR code che ti mostra in Casa ID e trovi subito il suo fascicolo.</p></div>
+ <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-p" data-act="scan">${I.qr} Scansiona QR code</button><button class="btn btn-s" data-act="scan" data-id="manual">Inserisci codice</button></div></div>`}
+
+/* ---------- condivisione di documenti ---------- */
+function openShare(ids){
+ const ds=ids.map(id=>S.data.documenti[id]).filter(d=>d&&d.filePath);if(!ds.length){toast('Seleziona almeno un documento con un file');return}
+ closeModal();S.shareIds=ds.map(d=>d.id);
+ modal(ds.length===1?'Condividi documento':`Condividi ${ds.length} documenti`,`
+  <div class="sharelist">${ds.slice(0,6).map(d=>`<div><span class="ico ico-${esc(d.sezione)}">${I.file}</span><span style="min-width:0"><b>${esc(d.titolo)}</b><small>${esc(SEZN[d.sezione])}${d.fileName?' · '+esc(d.fileName):''}</small></span></div>`).join('')}${ds.length>6?`<p class="muted" style="font-size:13px">e altri ${ds.length-6}</p>`:''}</div>
+  <div class="fld"><label for="sh-et">Per chi è</label><input id="sh-et" name="etichetta" required placeholder="Es. Geometra Rossi, Banca per il mutuo"></div>
+  <div class="fld"><label for="sh-days">Valido per</label><select id="sh-days" name="giorni"><option value="2">48 ore</option><option value="7" selected>7 giorni</option><option value="30">30 giorni</option><option value="90">90 giorni</option></select></div>
+  <p class="muted" style="font-size:13px">Chi riceve il link vede e scarica solo ${ds.length===1?'questo documento':'questi documenti'}, senza registrarsi. Puoi revocarlo dalla scheda Accessi.</p>
+  <p class="err" id="sh-err" hidden></p>`,
+  `<button type="button" class="btn btn-s" data-act="close">Annulla</button><button type="submit" class="btn btn-p" id="sh-ok">${I.link} Crea link</button>`,'share');
+}
+function linkReady(id,what,scad){
+ const i=S.data.immobili[S.cur]||{},url=guestUrl(id);
+ const text=`Ti condivido ${what} del fascicolo Casa ID di ${i.indirizzo||'un immobile'}${i.comune?', '+i.comune:''}. Il link è valido fino al ${fmt(scad)}:`;
+ S.lastShare={url,text};
+ modal('Link pronto',`<p class="lead" style="font-size:16px">Invialo a chi deve consultare ${esc(what)}. Non serve registrarsi.</p>
+  <p class="linkbox">${esc(url)}</p>
+  <div class="share-acts"><button type="button" class="btn btn-p" data-act="gcopy" data-id="${esc(id)}">Copia link</button>${navigator.share?`<button type="button" class="btn btn-s" data-act="gshare">Invia…</button>`:''}
+   <a class="btn btn-s" href="https://wa.me/?text=${encodeURIComponent(text+' '+url)}" target="_blank" rel="noopener">WhatsApp</a>
+   <a class="btn btn-s" href="mailto:?subject=${encodeURIComponent('Documenti Casa ID')}&body=${encodeURIComponent(text+'\n'+url)}">Email</a></div>
+  <p class="muted" style="font-size:13px">Valido fino al ${fmt(scad)}. Lo trovi nella scheda Accessi, dove puoi revocarlo.</p>`,
+  `<button type="button" class="btn btn-p" data-act="close">Fatto</button>`);
+}
+
+/* ---------- passaggio di proprietà ---------- */
+function passaggioAperto(imId){return vals('passaggi').find(p=>p.immobileId===imId&&p.stato==='in_attesa')}
+function passaggiPerMe(){return vals('passaggi').filter(p=>p.stato==='in_attesa'&&p.aEmail===myEmail())}
+function passaggioBox(i,a){
+ if(!a||a.livello!=='titolare')return '';
+ const p=passaggioAperto(i.id);
+ return `<section class="card" style="margin-top:20px"><div class="box-h"><h3>Passaggio di proprietà</h3>${p?'':`<button class="btn btn-s btn-sm" data-act="pstart">Avvia passaggio</button>`}</div>
+  <div style="padding:0 20px 20px">${p?`<div class="note">In attesa che <b>${esc(p.aEmail)}</b> accetti${p.dataAtto?` · atto del ${fmt(p.dataAtto)}`:''}. Finché non accetta, il fascicolo resta tuo. <button class="btn btn-g btn-sm" data-act="pcancel" data-id="${esc(p.id)}">Annulla passaggio</button></div>`
+  :`<p class="muted" style="font-size:14px">Il fascicolo appartiene all'immobile. Quando vendi, lo passi al nuovo proprietario con documenti, scadenze e codice Casa ID; tu e le persone che hai invitato perdete l'accesso.</p>`}</div></section>`;
+}
+function openPassaggio(){
+ const i=S.data.immobili[S.cur],n=presenza(i.id).n,lav=vals('richieste').filter(r=>r.immobileId===i.id&&r.stato==='lavorazione').length;
+ modal('Passaggio di proprietà',`
+  <div class="pas-grid"><div><h4>Passa al nuovo proprietario</h4><ul><li>${n} documenti e le relative scadenze</li><li>Codice Casa ID del fascicolo</li><li>Dati dell'immobile</li></ul></div>
+   <div><h4>Non passa</h4><ul><li>Registro degli accessi e attività</li><li>Link condivisi e inviti (vengono chiusi)</li><li>Richieste e preventivi</li></ul></div></div>
+  <div class="note">Dopo l'accettazione <b>tu perdi l'accesso</b>, come familiari e professionisti che hai invitato. Se vuoi tenerne una copia, scarica prima il fascicolo.</div>
+  ${lav?`<p class="err">Ci sono ${lav} pratiche in lavorazione: il passaggio potrà essere accettato solo dopo la consegna.</p>`:''}
+  <div class="fld"><label for="p-email">Email del nuovo proprietario</label><input id="p-email" name="email" type="email" required placeholder="acquirente@esempio.it"><span class="muted" style="font-size:13px">Se non usa ancora Casa ID, troverà la richiesta appena si registra con questa email.</span></div>
+  <div class="fld"><label for="p-data">Data dell'atto (facoltativa)</label><input id="p-data" name="dataAtto" type="date"></div>
+  <div class="checks block"><label><input type="checkbox" name="ok1" value="1"> Ho tolto dal fascicolo i documenti personali che non riguardano l'immobile</label><label><input type="checkbox" name="ok2" value="1"> Ho capito che, dopo l'accettazione, non avrò più accesso al fascicolo</label></div>
+  <p class="err" id="p-err" hidden></p>`,
+  `<button type="button" class="btn btn-g" data-act="export" style="margin-right:auto">Scarica una copia</button><button type="button" class="btn btn-s" data-act="close">Annulla</button><button type="submit" class="btn btn-p" id="p-ok">Avvia passaggio</button>`,'passaggio');
+}
+function passaggiInArrivo(){const ps=passaggiPerMe();if(!ps.length)return '';
+ return ps.map(p=>`<div class="card pas-in"><span class="cta-ico">${I.key||I.file}</span><div style="flex:1;min-width:220px"><p class="eyebrow">Passaggio di proprietà</p><h3>${esc((p.tipo||'Immobile')+' · '+(p.indirizzo||''))}</h3>
+  <p class="muted" style="font-size:14px">${esc(p.daNome||'Il proprietario')} ti trasferisce il fascicolo${p.comune?' di '+esc(p.comune):''}: ${p.nDocumenti||0} documenti${p.dataAtto?` · atto del ${fmt(p.dataAtto)}`:''}.</p></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-p" data-act="paccept" data-id="${esc(p.id)}">Accetta</button><button class="btn btn-s" data-act="prefuse" data-id="${esc(p.id)}">Rifiuta</button></div></div>`).join('');
+}
+function openAccept(pid){const p=S.data.passaggi[pid];if(!p)return;
+ modal('Accetta il passaggio',`<p class="lead" style="font-size:16px">Diventi titolare del fascicolo di <b>${esc((p.tipo||'')+' · '+(p.indirizzo||''))}</b>.</p>
+  <ul class="plain"><li>Ricevi ${p.nDocumenti||0} documenti, le scadenze e il codice Casa ID.</li><li>${esc(p.daNome||'Il precedente proprietario')} e le persone che aveva invitato perdono l'accesso.</li><li>Registro, link e richieste del precedente proprietario non ti vengono mostrati.</li><li>Casa ID non verifica la proprietà né il contenuto dei documenti.</li></ul>`,
+  `<button type="button" class="btn btn-s" data-act="close">Annulla</button><button type="button" class="btn btn-p" data-act="pconfirm" data-id="${esc(pid)}">Accetto il passaggio</button>`);
+}
+
 /* ---------- azioni ---------- */
 async function copy(t){try{await navigator.clipboard.writeText(t);toast('Copiato')}catch(e){prompt('Copia il testo:',t)}}
 const guestUrl=id=>location.origin+location.pathname+'#g'+id;
@@ -547,9 +763,32 @@ const H={
  async qcancel(t){if(t.dataset.confirm!=='1'){t.dataset.confirm='1';t.textContent='Conferma annullamento';return}try{const {error}=await S.sb.rpc('annulla_richiesta',{rid:t.dataset.id});if(error)throw error;await loadAll();toast('Richiesta annullata')}catch(e){toast(errMsg(e))}},
  'auth-mode'(t){S.authMode=t.dataset.id;S.authMsg='';render()},
  async logout(){S.page=null;await S.sb.auth.signOut()},
- open(t){S.cur=t.dataset.id;S.view='fascicolo';S.tab='documenti';S.sez='tutti';S.q='';render();scrollTo(0,0)},
+ open(t){S.cur=t.dataset.id;S.view='fascicolo';S.tab='documenti';S.sez='tutti';S.q='';S.selMode=false;S.sel.clear();render();scrollTo(0,0)},
+ lista(){openLista()},
+ vup(t){closeModal();openUpload({voce:t.dataset.id})},
+ vreq(t){closeModal();S.tab='servizi';render();setTimeout(()=>{const b=document.querySelector(`[data-act=req][data-id="${t.dataset.id}"]`);if(b)b.click()},50)},
+ async vna(t){const i=S.data.immobili[S.cur],na=new Set(i.vociNa||[]),id=t.dataset.id;na.has(id)?na.delete(id):na.add(id);
+   try{await write(S.sb.from('immobili').update({voci_na:[...na]}).eq('id',i.id));i.vociNa=[...na];openLista()}catch(e){toast(errMsg(e))}},
+ qpreset(t){const set=SEZ_DEFAULT[t.dataset.id]||[];document.querySelectorAll('#modal input[name=sezioni]').forEach(c=>c.checked=set.includes(c.value));document.querySelectorAll('#modal [data-act=qpreset]').forEach(b=>b.setAttribute('aria-pressed',b===t))},
+ scan(t){openScan(t.dataset.id==='manual')},
+ selmode(){S.selMode=!S.selMode;S.sel.clear();render()},
+ pick(t){const id=t.dataset.id;S.sel.has(id)?S.sel.delete(id):S.sel.add(id);render()},
+ selall(){const i=S.data.immobili[S.cur],a=acc(S.cur),q=S.q.trim().toLowerCase();
+   const ds=docsOf(i.id,a).filter(d=>d.filePath&&(S.sez==='tutti'||d.sezione===S.sez)&&(!q||(d.titolo+' '+(d.note||'')+' '+(d.fileName||'')).toLowerCase().includes(q)));
+   if(ds.length&&ds.every(d=>S.sel.has(d.id)))ds.forEach(d=>S.sel.delete(d.id));else ds.forEach(d=>S.sel.add(d.id));render()},
+ share(t){openShare(t.dataset.id?[t.dataset.id]:[...S.sel])},
+ async gshare(){const s=S.lastShare;if(!s)return;try{await navigator.share({title:'Casa ID',text:s.text,url:s.url})}catch(e){}},
+ pstart(){openPassaggio()},
+ async pcancel(t){if(t.dataset.confirm!=='1'){t.dataset.confirm='1';t.textContent='Conferma annullamento';return}
+   try{const {error}=await S.sb.rpc('annulla_passaggio',{pid:t.dataset.id});if(error)throw error;await loadAll();toast('Passaggio annullato')}catch(e){toast(errMsg(e))}},
+ paccept(t){openAccept(t.dataset.id)},
+ async prefuse(t){if(t.dataset.confirm!=='1'){t.dataset.confirm='1';t.textContent='Conferma rifiuto';return}
+   try{const {error}=await S.sb.rpc('rispondi_passaggio',{pid:t.dataset.id,accetta:false});if(error)throw error;await loadAll();toast('Passaggio rifiutato')}catch(e){toast(errMsg(e))}},
+ async pconfirm(t){busy(t,'Un momento…');const {data,error}=await S.sb.rpc('rispondi_passaggio',{pid:t.dataset.id,accetta:true});
+   if(error){busy(t);toast(errMsg(error));return}
+   await loadAll();closeModal();S.cur=data;S.view='fascicolo';S.tab='documenti';S.sez='tutti';render();scrollTo(0,0);toast('Ora sei titolare del fascicolo')},
  incarichi(){S.view='incarichi';S.cur=null;render()},
- tab(t){S.tab=t.dataset.id;render()},
+ tab(t){if(!$('#modal').hidden)closeModal();S.tab=t.dataset.id;S.selMode=false;S.sel.clear();render()},
  sez(t){S.sez=t.dataset.id;render()},
  upload(){openUpload()},
  doc(t){openDoc(t.dataset.id)},
@@ -608,7 +847,7 @@ const F={
        const {error}=await S.sb.storage.from(BUCKET).upload(path,file,{contentType:type,upsert:false});if(error)throw error;
        meta={file_path:path,file_name:file.name,file_type:type,size:file.size}}
      const row={immobile_id:imId,titolo,sezione:f.sezione.value,data_documento:f.dataDocumento.value||null,scadenza:f.scadenza.value||null,note:f.note.value.trim()||null,
-       caricato_da:u.id,caricato_ruolo:u.ruolo,stato:PROF.includes(u.ruolo)?'verificato':'caricato',...meta};
+       caricato_da:u.id,caricato_ruolo:u.ruolo,stato:PROF.includes(u.ruolo)?'verificato':'caricato',...(f.voce&&f.voce.value?{voce:f.voce.value}:{}),...meta};
      const {data,error}=await S.sb.from('documenti').insert(row).select('id').single();if(error)throw error;
      if(f.richiestaId.value){await write(S.sb.from('richieste').update({stato:'consegnata',documento_id:data.id,consegnata_il:now()}).eq('id',f.richiestaId.value));evento(imId,`ha consegnato: ${titolo}`)}
      else evento(imId,`ha caricato «${titolo}» in ${SEZN[f.sezione.value]}`);
@@ -627,13 +866,32 @@ const F={
    try{await write(S.sb.from('accessi').insert({immobile_id:S.cur,email,livello:liv,sezioni:liv==='professionista'?sez:null,scadenza:liv==='professionista'?(f.scadenza.value||null):null,puo_invitare:liv==='delegato'?!!(f.puoInvitare&&f.puoInvitare.checked):false,invitato_da:S.session.user.id}));
      evento(S.cur,`ha invitato ${ename(email)} come ${LIV[liv]}${liv==='professionista'?' ('+sez.map(s=>SEZN[s]).join(', ')+')':''}`);closeModal();toast(userByEmail(email)?'Accesso concesso':'Invito registrato: vedrà il fascicolo appena si registra')}
    catch(e){showErr('i-err',errMsg(e))}},
+ async qrgen(f){const sez=[...f.querySelectorAll('input[name=sezioni]:checked')].map(c=>c.value),giorni=+f.giorni.value;
+   if(!sez.length){showErr('c-err','Scegli almeno una sezione.');return}
+   const b=$('#c-ok');busy(b,'Genero…');
+   const {data,error}=await S.sb.rpc('crea_collegamento',{imm:S.cur,p_sezioni:sez,p_giorni:giorni});
+   if(error){busy(b);showErr('c-err',errMsg(error));return}
+   evento(S.cur,`ha generato un QR code di collegamento (${sez.map(s=>SEZN[s]).join(', ')}, ${giorni} giorni)`);showQr(data,sez,giorni)},
+ scan(f){const c=normCode(f.codice.value);if(!c){showErr('s-err','Il codice ha 10 caratteri tra lettere e numeri, per esempio ABCDE-FGHJK.');return}Q.busy=true;redeem(c)},
+ async share(f){const et=f.etichetta.value.trim(),giorni=+f.giorni.value,ds=S.shareIds.map(id=>S.data.documenti[id]).filter(Boolean);
+   if(!et){showErr('sh-err','Scrivi per chi è il link.');return}if(!ds.length)return;
+   const id=rid(14),imId=ds[0].immobileId,sez=[...new Set(ds.map(d=>d.sezione))],what=ds.length===1?`il documento «${ds[0].titolo}»`:`${ds.length} documenti`;
+   const b=$('#sh-ok');busy(b,'Creo il link…');
+   try{await write(S.sb.from('condivisioni').insert({id,immobile_id:imId,etichetta:et,sezioni:sez,documenti:ds.map(d=>d.id),scadenza:addDays(giorni),creato_da:S.session.user.id}));
+     evento(imId,`ha condiviso ${what} con «${et}» (${giorni===2?'48 ore':giorni+' giorni'})`);S.selMode=false;S.sel.clear();render();linkReady(id,what,addDays(giorni))}
+   catch(e){busy(b);showErr('sh-err',errMsg(e))}},
+ async passaggio(f){const email=f.email.value.trim().toLowerCase();
+   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){showErr('p-err','Scrivi l\'email del nuovo proprietario.');return}
+   if(!f.ok1.checked||!f.ok2.checked){showErr('p-err','Conferma le due dichiarazioni prima di avviare il passaggio.');return}
+   const b=$('#p-ok');busy(b,'Avvio…');
+   const {error}=await S.sb.rpc('avvia_passaggio',{imm:S.cur,p_email:email,p_data:f.dataAtto.value||null});
+   if(error){busy(b);showErr('p-err',errMsg(error));return}
+   await loadAll();closeModal();toast(userByEmail(email)?'Passaggio avviato: il nuovo proprietario deve accettarlo':'Passaggio avviato: lo troverà appena si registra con questa email')},
  async glink(f){const sez=[...f.querySelectorAll('input[name=sezioni]:checked')].map(c=>c.value),et=f.etichetta.value.trim();
    if(!et||!sez.length){showErr('g-err',!et?'Scrivi per chi è il link.':'Scegli almeno una sezione.');return}
    const id=rid(14),giorni=+f.giorni.value;
    try{await write(S.sb.from('condivisioni').insert({id,immobile_id:S.cur,etichetta:et,sezioni:sez,scadenza:addDays(giorni),creato_da:S.session.user.id}));
-     evento(S.cur,`ha creato il link «${et}» (${giorni} giorni)`);closeModal();
-     modal('Link creato',`<p class="lead">Invia questo indirizzo a chi deve consultare il fascicolo. Non serve registrarsi.</p><p class="code" style="font-size:14px;word-break:break-all;background:var(--surface-2);padding:12px;border-radius:10px">${esc(guestUrl(id))}</p><p class="muted" style="font-size:14px">Vedrà solo le sezioni scelte fino al ${fmt(addDays(giorni))}. Puoi revocarlo quando vuoi dalla scheda Accessi.</p>`,
-       `<button type="button" class="btn btn-s" data-act="gcopy" data-id="${esc(id)}">Copia link</button><button type="button" class="btn btn-p" data-act="close">Fatto</button>`)}
+     evento(S.cur,`ha creato il link «${et}» (${giorni} giorni)`);linkReady(id,`le sezioni ${sez.map(s=>SEZN[s]).join(', ')}`,addDays(giorni))}
    catch(e){showErr('g-err',errMsg(e))}},
  async newim(f){const u=me(),pro=PROF.includes(u.ruolo);
    if(!f.indirizzo.value.trim()||!f.comune.value.trim()){showErr('n-err','Indirizzo e comune sono obbligatori.');return}

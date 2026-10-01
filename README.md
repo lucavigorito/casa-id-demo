@@ -33,7 +33,7 @@ Non sono inclusi SPID/CIE, pagamenti e notifiche email: arrivano con l'MVP.
 
 ### 1. Supabase
 1. Crea un progetto (regione **Central EU – Frankfurt**).
-2. Apri **SQL Editor › New query**, incolla tutto il contenuto di `supabase/schema.sql` e premi **Run**. Deve comparire "Success".
+2. Apri **SQL Editor › New query**, incolla tutto il contenuto di `supabase/schema.sql` e premi **Run**. Deve comparire "Success". Ripeti, nell'ordine, con `supabase/migrazione-01-preventivi.sql` e `supabase/migrazione-02-novita.sql`.
    Poi, in una nuova query, esegui allo stesso modo `supabase/migrazione-01-preventivi.sql` (servizi con preventivo).
 3. In **Authentication › Sign In / Providers › Email** disattiva **Confirm email** (per la demo i tester entrano subito dopo la registrazione).
 4. In **Authentication › URL Configuration** imposta **Site URL** con l'indirizzo del sito (lo avrai al punto 3).
