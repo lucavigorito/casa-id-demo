@@ -120,7 +120,7 @@ async function boot(){
   if(session)startData();
   S.sb.auth.onAuthStateChange((ev,sess)=>{
     const had=!!S.session;S.session=sess;
-    if(sess&&!had){S.state='loading';render();startData()}
+    if(sess&&!had){if(S.page==='accedi')S.page=null;S.state='loading';render();startData()}
     if(!sess&&had){S.data=Object.fromEntries(TABLES.map(t=>[t,{}]));S.state='auth';S.cur=null;S.view='home';stopRealtime();render()}
   });
 }
@@ -140,7 +140,7 @@ function draw(){
   else if(S.guest)h=guestView();
   else if(S.page==='faq')h=faqView();
   else if(S.page==='esempio')h=esempioView();
-  else if(S.state==='auth')h=authView();
+  else if(S.state==='auth')h=(S.page==='accedi'||S.pendingCode)?authView():landingView();
   else if(S.state==='loading'||!me())h=loading('Carico i tuoi fascicoli…');
   else h=shell();
   $('#app').innerHTML=h;
@@ -153,7 +153,7 @@ function configView(){return barHtml()+`<main class="wrap"><div class="card empt
 /* accesso e registrazione */
 function authView(){
   const reg=S.authMode==='register';
-  return barHtml()+`<main class="wrap"><div class="login">
+  return barHtml(`<button class="btn-bar" data-act="page" data-id="">Torna alla home</button>`)+`<main class="wrap"><div class="login">
   <section><p class="eyebrow">Casa ID · versione demo</p><h1>I documenti della tua casa, organizzati e pronti da condividere</h1>
    <p class="lead">Casa ID riunisce il fascicolo del tuo immobile. I professionisti caricano i documenti prodotti per te; tu li ritrovi e decidi con chi condividerli e per quanto tempo.</p>
    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:20px"><button type="button" class="btn btn-p" data-act="page" data-id="esempio">${I.eye} Guarda un fascicolo di esempio</button><button type="button" class="btn btn-s" data-act="page" data-id="faq">Domande frequenti</button></div>
@@ -500,7 +500,7 @@ const FAQ=[
 ];
 function faqView(){
   const cfg=window.CASAID_CONFIG||{};
-  const back=`<button class="btn-bar" data-act="page" data-id="">${S.session?'Torna ai fascicoli':'Torna all\'accesso'}</button>`;
+  const back=`<button class="btn-bar" data-act="page" data-id="">${S.session?'Torna ai fascicoli':'Torna alla home'}</button>`;
   return barHtml(back)+`<main class="wrap" style="max-width:860px"><div class="hello"><p class="eyebrow">Casa ID · versione demo</p><h1>Domande frequenti</h1><p class="lead">Cosa fa Casa ID oggi, cosa dipende dai professionisti e cosa è ancora in definizione.</p></div>
   ${FAQ.map(([t,qs])=>`<h2 class="section-t">${esc(t)}</h2><div class="card list">${qs.map(([q,a])=>`<details class="person" style="display:block"><summary style="cursor:pointer;font-weight:700;font-size:16px">${esc(q)}</summary><p style="margin-top:8px;color:var(--ink-2)">${esc(a)}</p></details>`).join('')}</div>`).join('')}
   <h2 class="section-t">Chi gestisce la demo</h2><div class="card" style="padding:20px">${cfg.GESTORE?`<p><b>${esc(cfg.GESTORE)}</b></p>`:'<p>Versione dimostrativa in fase di test con un gruppo ristretto di utenti.</p>'}${cfg.CONTATTO?`<p class="muted" style="margin-top:6px">Assistenza e segnalazioni: <b>${esc(cfg.CONTATTO)}</b></p>`:''}</div></main>`;
@@ -510,7 +510,7 @@ const ESEMPIO={codice:'CID-ESEM-PIO1',tipo:'Appartamento',indirizzo:'Via dei Mil
  accessi:[['Mario Rossi','proprietario','Titolare'],['Anna Rossi','familiare','Delegata · può invitare professionisti'],['Geom. Luca Bianchi','tecnico','Urbanistica, Impianti ed energia · fino al 31/03/2027'],['Banca per il mutuo','','Link di sola lettura · Proprietà e atti, Catasto · scade il 31/12/2026']]};
 function esempioView(){
   const e=ESEMPIO;
-  const back=`<button class="btn-bar" data-act="page" data-id="">${S.session?'Torna ai fascicoli':'Registrati o accedi'}</button>`;
+  const back=S.session?`<button class="btn-bar" data-act="page" data-id="">Torna ai fascicoli</button>`:`<button class="btn-bar" data-act="page" data-id="">Torna alla home</button><button class="btn-bar solid" data-act="page" data-id="accedi" data-mode="register">Prova la demo</button>`;
   const ds=e.docs.map(([t,sez,dt,sc,r,st])=>{const x=DSTATO[st];return `<div class="row" style="cursor:default"><span class="ico ico-${sez}">${I.file}</span><span style="min-width:0"><b>${esc(t)}</b><small>${esc(SEZN[sez])} · ${dt?'del '+fmt(dt):'senza data'}</small></span><span class="rb">${badge(r)}</span><span class="right"><span class="${x[1]}" style="font-weight:700">${x[0]}</span>${sc?`<span class="muted">scade ${fmt(sc)}</span>`:''}</span></div>`}).join('');
   return barHtml(back)+`<div class="guest-bar">Esempio illustrativo con dati fittizi: nessun documento reale</div><main class="wrap">
   <section class="card fhead"><div class="t"><span class="eyebrow">Fascicolo immobile · esempio</span><h1>${e.tipo} · ${e.indirizzo}</h1><p class="muted">${e.comune} · ${e.cat}</p>
@@ -750,12 +750,97 @@ function openAccept(pid){const p=S.data.passaggi[pid];if(!p)return;
   `<button type="button" class="btn btn-s" data-act="close">Annulla</button><button type="button" class="btn btn-p" data-act="pconfirm" data-id="${esc(pid)}">Accetto il passaggio</button>`);
 }
 
+/* ---------- landing pubblica ---------- */
+function landingView(){
+ const cfg=window.CASAID_CONFIG||{};
+ const nav=`<nav class="lp-nav" aria-label="Sezioni"><button class="btn-link" data-act="goto" data-id="lp-come">Come funziona</button><button class="btn-link" data-act="goto" data-id="lp-pro">Professionisti</button><button class="btn-link" data-act="goto" data-id="lp-prezzo">Prezzo</button></nav>
+  <button class="btn-bar" data-act="page" data-id="accedi" data-mode="login">Accedi</button><button class="btn-bar solid" data-act="page" data-id="accedi" data-mode="register">Prova la demo</button>`;
+ const ck=t=>`<li>${I.check}<span>${t}</span></li>`;
+ const feat=(id,eye,h,p,items,img,alt,rev,extra='')=>`<section class="lp-feat${rev?' rev':''}" id="${id}"><div class="lp-ft"><p class="eyebrow">${eye}</p><h2>${h}</h2><p class="lead">${p}</p><ul class="lp-ck">${items.map(ck).join('')}</ul>${extra}</div>
+  <figure class="lp-phone"><div class="frame"><img src="img/${img}.webp" alt="${alt}" loading="lazy" width="390" height="844"></div><figcaption>Esempio con dati fittizi</figcaption></figure></section>`;
+ return barHtml(nav)+`<main class="lp">
+ <section class="lp-hero"><div class="lp-in lp-hero-in">
+  <div class="lp-hero-t"><p class="eyebrow">Carta d'identità dell'immobile</p>
+   <h1>I documenti della tua casa, organizzati e pronti da condividere</h1>
+   <p class="lead">Casa ID riunisce il fascicolo del tuo immobile. I professionisti caricano i documenti prodotti per te; tu li ritrovi e decidi con chi condividerli e per quanto tempo.</p>
+   <div class="lp-cta"><button class="btn btn-p btn-lg" data-act="page" data-id="accedi" data-mode="register">Prova la demo</button><button class="btn btn-s btn-lg" data-act="page" data-id="esempio">${I.eye} Guarda un fascicolo di esempio</button></div>
+   <p class="muted lp-small">Versione dimostrativa: si entra con email e password, con documenti di prova.</p></div>
+  <div class="lp-shot" aria-hidden="true"><div class="lp-browser"><span class="dots"><i></i><i></i><i></i></span><img src="img/app-fascicolo.webp" alt="" width="1280" height="650"></div>
+   <div class="lp-phone mini"><div class="frame"><img src="img/app-telefono.webp" alt="" width="390" height="844"></div></div></div>
+ </div></section>
+
+ <section class="lp-band"><div class="lp-in"><p class="eyebrow">Ti riconosci?</p><h2>Quando servono, i documenti della casa non si trovano mai</h2>
+  <div class="lp-grid3">
+   <div class="lp-card">${I.search}<p>La banca chiede il rogito per il mutuo e non ricordi dove l'hai messo.</p></div>
+   <div class="lp-card">${I.file}<p>Il notaio chiede planimetria e pratiche edilizie, e devi ricostruire chi le aveva.</p></div>
+   <div class="lp-card">${I.bell}<p>Vuoi affittare e scopri all'ultimo che l'APE è scaduto.</p></div></div></div></section>
+
+ <section class="lp-sec" id="lp-come"><div class="lp-in"><p class="eyebrow">Come funziona</p><h2>Come si costruisce il tuo fascicolo</h2>
+  <ol class="lp-steps">
+   <li><b>1</b><h3>Attivi il fascicolo</h3><p>Indichi il tuo immobile. Nella versione definitiva l'accesso sarà con SPID o CIE.</p></li>
+   <li><b>2</b><h3>Inviti i professionisti</h3><p>Agenzia, tecnico e notaio caricano i documenti che hanno prodotto per te. Puoi aggiungere anche quelli che hai già.</p></li>
+   <li class="hi"><b>3</b><h3>Li ritrovi quando servono</h3><p>Da telefono o computer, ordinati in sei sezioni: atti, catasto, urbanistica, impianti, condominio, contratti.</p></li></ol>
+  <p class="lp-note">${I.search}<span><b>Ti manca un documento?</b> Il recupero è un servizio a parte: lo chiedi a un professionista e decidi dopo aver visto il preventivo.</span></p></div></section>
+
+ <div class="lp-in lp-feats">
+ ${feat('lp-lista','Lista di base','Vedi subito cosa c\'è e cosa manca','Una percentuale calcolata su dieci documenti di base, dall\'atto di provenienza all\'APE. Per ogni voce mancante puoi caricarla, chiedere un preventivo o segnarla come non applicabile.',['Atto di provenienza, visura, planimetria, titoli edilizi, agibilità, APE e impianti','Ogni documento mostra chi l\'ha caricato e quando','È un riferimento: non certifica che il fascicolo basti per una vendita o una pratica'],'app-lista','La lista dei documenti di base con la percentuale',false)}
+ ${feat('lp-cond','Condivisione','Condividi solo quello che serve','Scegli un documento o una selezione e crei un unico link di sola lettura, con la scadenza che decidi. Lo mandi su WhatsApp o per email; chi lo riceve non deve registrarsi.',['Un documento, più documenti o intere sezioni','Link da 48 ore a 90 giorni, revocabile quando vuoi','Ogni apertura resta nel registro degli accessi'],'app-condividi','Selezione di più documenti da condividere',true)}
+ ${feat('lp-qr','QR code','Il professionista si collega con un QR code','Mostri il QR dal telefono, il professionista lo inquadra con Casa ID e si ritrova nel tuo fascicolo, solo nelle sezioni che hai scelto e per il tempo che hai deciso.',['Vale 15 minuti e per una sola persona','In alternativa il professionista digita il codice','Lo trovi nella scheda Accessi e lo revochi con un tocco'],'app-qr','Il QR code di collegamento sul telefono del proprietario',false)}
+ </div>
+
+ <section class="lp-sec lp-alt" id="lp-passaggio"><div class="lp-in lp-pass">
+  <div><p class="eyebrow">Passaggio di proprietà</p><h2>Il fascicolo resta alla casa</h2><p class="lead">Quando vendi, avvii il passaggio indicando l'email dell'acquirente. Quando accetta, diventa titolare del fascicolo; tu e le persone che avevi invitato perdete l'accesso.</p>
+   <p class="muted lp-small">Prima puoi scaricare una copia. Casa ID non verifica l'atto di vendita.</p></div>
+  <div class="lp-pass-v" role="img" aria-label="Passano documenti, scadenze e codice Casa ID; restano riservati registro, link, richieste e preventivi">
+   <div class="who"><span class="av">V</span><b>Venditore</b><small>avvia il passaggio</small></div>
+   <div class="mid"><div class="box ok"><h4>Passa</h4><p>Documenti e scadenze</p><p>Codice Casa ID</p><p>Dati dell'immobile</p></div><div class="box no"><h4>Resta riservato</h4><p>Registro accessi</p><p>Link e inviti</p><p>Richieste e preventivi</p></div></div>
+   <div class="who"><span class="av b">A</span><b>Acquirente</b><small>accetta e diventa titolare</small></div></div>
+ </div></section>
+
+ <section class="lp-sec"><div class="lp-in"><p class="eyebrow">Il controllo è tuo</p><h2>Decidi tu chi vede cosa</h2>
+  <div class="lp-grid4">
+   <div class="lp-card">${I.key}<h3>Accesso a tuo nome</h3><p>Con SPID o CIE nella versione definitiva. Il codice Casa ID identifica il fascicolo e non ha valore ufficiale.</p></div>
+   <div class="lp-card">${I.plus}<h3>Famiglia e delegati</h3><p>Coniuge, figli, co-intestatari, con i permessi che scegli.</p></div>
+   <div class="lp-card">${I.qr}<h3>Professionisti a tempo</h3><p>Vedono solo le sezioni che indichi, fino alla data che decidi.</p></div>
+   <div class="lp-card">${I.eye}<h3>Registro e revoca</h3><p>Vedi chi ha consultato cosa e chiudi un accesso quando vuoi.</p></div></div>
+  <p class="muted lp-small" style="margin-top:16px">La revoca vale da quel momento: chi ha già scaricato un documento ne conserva la copia. I file sono in un archivio privato su server nell'Unione Europea.</p></div></section>
+
+ <section class="lp-sec lp-dark" id="lp-pro"><div class="lp-in lp-pro">
+  <div><p class="eyebrow">Per agenzie, tecnici e notai</p><h2>Lavori sui documenti del cliente, senza rincorrerli</h2>
+   <p class="lead">Il cliente ti invita o ti mostra il QR code: entri nel suo fascicolo con le sezioni che ti servono, carichi i documenti che produci e ricevi le richieste di preventivo per le pratiche.</p>
+   <div class="lp-cta"><button class="btn btn-w btn-lg" data-act="page" data-id="accedi" data-mode="register">Registrati come professionista</button></div></div>
+  <ul class="lp-ck light">${['Collegamento con QR code o invito via email','Carichi direttamente nel fascicolo del cliente','Crei il fascicolo per un cliente che non lo ha ancora','Ricevi richieste di preventivo e consegni il documento in app'].map(ck).join('')}</ul>
+ </div></section>
+
+ <section class="lp-sec" id="lp-prezzo"><div class="lp-in lp-price">
+  <div class="lp-pcard"><p class="eyebrow light">Abbonamento previsto</p><p class="big">10 €</p><p class="per">all'anno, per immobile</p><p class="lp-small light">La demo non ha costi. Rinnovo, disdetta e imposte saranno indicati prima dell'attivazione a pagamento.</p></div>
+  <div><h2>Il tuo fascicolo digitale</h2><ul class="lp-ck cols">${['Fascicolo in sei sezioni','Visualizzazione in app, da telefono e computer','Link di condivisione a tempo','Accessi per familiari, delegati e professionisti','Lista delle scadenze inserite','Esportazione del fascicolo in ZIP'].map(ck).join('')}</ul>
+   <p class="lp-note">${I.file}<span><b>Servizi tecnici a preventivo.</b> Visure, accesso agli atti, APE e altre pratiche non sono compresi: il professionista indica il costo totale e decidi tu se procedere.</span></p></div>
+ </div></section>
+
+ <section class="lp-sec lp-alt"><div class="lp-in lp-faq"><div><p class="eyebrow">Domande frequenti</p><h2>Prima di provare</h2><button class="btn btn-s" data-act="page" data-id="faq">Tutte le domande</button></div>
+  <div class="card list">${[
+   ['Casa ID verifica i documenti?','No. Mostra chi ha caricato ogni documento e quando. Contenuto, aggiornamento e conformità restano responsabilità di chi li ha prodotti.'],
+   ['E se il mio tecnico non usa Casa ID?','Lo inviti con la sua email o gli mostri il QR code: si registra e vede solo le sezioni che scegli. Oppure carichi tu i documenti che ti consegna.'],
+   ['I servizi tecnici sono compresi?','No. Ogni pratica ha un preventivo con il costo totale, che accetti o rifiuti prima che parta.'],
+   ['Se disdico, perdo i documenti?','Puoi scaricare l\'intero fascicolo in ZIP, con indice, in qualsiasi momento.'],
+   ['Posso caricare documenti veri nella demo?','No: è una versione di prova. Usa solo documenti di esempio, senza dati reali tuoi o di altre persone.']].map(([q,a])=>`<details class="person" style="display:block"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div></div></section>
+
+ <section class="lp-final"><div class="lp-in"><h2>Inizia dal tuo fascicolo</h2><p class="lead">Crea un fascicolo di esempio in un minuto e prova condivisione, QR code e passaggio di proprietà.</p>
+  <div class="lp-cta center"><button class="btn btn-w btn-lg" data-act="page" data-id="accedi" data-mode="register">Prova la demo</button><button class="btn btn-o btn-lg" data-act="page" data-id="esempio">Guarda un fascicolo di esempio</button></div></div></section>
+ </main>
+ <footer class="lp-foot"><div class="lp-in"><div class="brandline">${LOGO()}<span><b>Casa ID</b><small>Carta d'identità dell'immobile</small></span></div>
+  <p>Versione dimostrativa${cfg.GESTORE?' gestita da '+esc(cfg.GESTORE):''}. Usa solo documenti di prova. Il codice Casa ID identifica il fascicolo nel servizio e non ha valore catastale o ufficiale. Casa ID non certifica contenuto, aggiornamento o conformità dei documenti.${cfg.CONTATTO?' Contatti: '+esc(cfg.CONTATTO)+'.':''}</p>
+  <p><button class="btn-link" data-act="page" data-id="faq">Domande frequenti</button> · <button class="btn-link" data-act="page" data-id="esempio">Fascicolo di esempio</button> · <button class="btn-link" data-act="page" data-id="accedi" data-mode="login">Accedi</button></p></div></footer>`;
+}
+
 /* ---------- azioni ---------- */
 async function copy(t){try{await navigator.clipboard.writeText(t);toast('Copiato')}catch(e){prompt('Copia il testo:',t)}}
 const guestUrl=id=>location.origin+location.pathname+'#g'+id;
 const H={
  home(){if(S.guest){H.gclose();return}S.page=null;S.view='home';S.cur=null;render()},
- page(t){S.page=t.dataset.id||null;if(!S.page&&!S.session)S.authMode='register';render();scrollTo(0,0)},
+ page(t){S.page=t.dataset.id||null;if(S.page==='accedi'){S.authMode=t.dataset.mode||'login';S.authMsg=''}render();scrollTo(0,0)},
+ goto(t){const el=document.getElementById(t.dataset.id);if(el)el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'})},
  export(t){exportFascicolo(t)},
  quote(t){openQuote(t.dataset.id)},
  async qok(t){t.disabled=true;try{const {error}=await S.sb.rpc('rispondi_preventivo',{rid:t.dataset.id,accetta:true});if(error)throw error;await loadAll();toast('Preventivo accettato: il professionista può procedere')}catch(e){toast(errMsg(e));t.disabled=false}},

@@ -6,6 +6,7 @@ Questa è la **versione dimostrativa** da far provare a proprietari e profession
 
 ## Cosa fa
 
+- Pagina di presentazione pubblica (landing) con accesso alla demo.
 - Registrazione e accesso con email e password, scegliendo il ruolo: proprietario, familiare, agenzia, broker, tecnico, notaio.
 - Fascicolo per immobile con codice Casa ID, sei sezioni, completezza, ricerca.
 - Caricamento di PDF e immagini (fino a 20 MB) e visualizzazione dentro l'app.
