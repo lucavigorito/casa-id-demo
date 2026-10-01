@@ -114,6 +114,7 @@ async function boot(){
   if(!window.supabase||!cfg.SUPABASE_URL||/INCOLLA/.test(cfg.SUPABASE_URL)){S.state='config';render();return}
   S.sb=window.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
   parseHash();
+  try{const g=new URLSearchParams(location.search).get('guida');if(g!==null){S.page='guida';S.guida=g==='professionista'?'professionista':'proprietario'}}catch(e){}
   try{const c=normCode(new URLSearchParams(location.search).get('collega'));if(c){S.pendingCode=c;history.replaceState(null,'',location.pathname+location.hash)}}catch(e){}
   const {data:{session}}=await S.sb.auth.getSession();
   S.session=session;S.state=session?'loading':'auth';render();
@@ -138,6 +139,7 @@ function draw(){
   if(S.state==='boot')h=loading('Avvio di Casa ID…');
   else if(S.state==='config')h=configView();
   else if(S.guest)h=guestView();
+  else if(S.page==='guida')h=guideView();
   else if(S.page==='faq')h=faqView();
   else if(S.page==='esempio')h=esempioView();
   else if(S.state==='auth')h=(S.page==='accedi'||S.pendingCode)?authView():landingView();
@@ -834,12 +836,41 @@ function landingView(){
   <p><button class="btn-link" data-act="page" data-id="faq">Domande frequenti</button> · <button class="btn-link" data-act="page" data-id="esempio">Fascicolo di esempio</button> · <button class="btn-link" data-act="page" data-id="accedi" data-mode="login">Accedi</button></p></div></footer>`;
 }
 
+/* ---------- vademecum (pagina nascosta: ?guida=proprietario | professionista) ---------- */
+function mdHtml(src){
+ const inl=s=>esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'),L=src.split('\n');let h='',i=0;
+ const isList=x=>/^(\d+\.|-) /.test(x),isSub=x=>/^\s+- /.test(x);
+ while(i<L.length){const l=L[i];
+  if(!l.trim()){i++;continue}
+  if(l.startsWith('## ')){const t=l.slice(3),n=(t.match(/^\d+/)||[''])[0];h+=`<h2 id="g-${n||i}">${inl(t)}</h2>`;i++;continue}
+  if(l.startsWith('|')){const rows=[];while(i<L.length&&L[i].startsWith('|'))rows.push(L[i++]);const cells=r=>r.trim().slice(1,-1).split('|').map(c=>c.trim());
+   h+=`<div class="g-tw"><table class="g-t"><thead><tr>${cells(rows[0]).map(c=>`<th>${inl(c)}</th>`).join('')}</tr></thead><tbody>${rows.slice(2).map(r=>`<tr>${cells(r).map(c=>`<td>${inl(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;continue}
+  if(isList(l)){const ord=/^\d+\./.test(l),items=[];while(i<L.length&&(isList(L[i])||isSub(L[i]))){const x=L[i++];if(isSub(x)&&items.length)items[items.length-1].sub.push(x.trim().slice(2));else items.push({t:x.replace(/^(\d+\.|-) /,''),sub:[]})}
+   const tag=ord?'ol':'ul';h+=`<${tag}>${items.map(it=>`<li>${inl(it.t)}${it.sub.length?`<ul>${it.sub.map(s=>`<li>${inl(s)}</li>`).join('')}</ul>`:''}</li>`).join('')}</${tag}>`;continue}
+  const p=[];while(i<L.length&&L[i].trim()&&!/^(## |\|)/.test(L[i])&&!isList(L[i]))p.push(L[i++]);h+=`<p>${inl(p.join(' '))}</p>`}
+ return h;
+}
+function guideView(){
+ const G=window.CASAID_GUIDE;
+ const right=`<button class="btn-bar" data-act="page" data-id="">${S.session?'Torna ai fascicoli':'Apri la demo'}</button>`;
+ if(!G){ensureLib('guida.js').then(render).catch(()=>{S.guideErr=true;render()});return barHtml(right)+`<main class="wrap">${S.guideErr?'<div class="card empty"><p class="lead">Non riesco a caricare la guida. Ricarica la pagina.</p></div>':loading('Carico la guida…')}</main>`}
+ const k=G[S.guida]?S.guida:'proprietario',g=G[k],secs=[...g.md.matchAll(/^## (\d+)\. (.+)$/gm)];
+ return barHtml(right)+`<main class="wrap g-wrap">
+  <div class="g-head"><p class="eyebrow">Casa ID · versione demo</p><h1>${esc(g.t)}</h1>
+   <div class="g-tools"><div class="tools" style="margin:0">${Object.entries(G).map(([id,x])=>`<button class="chip" data-act="guida" data-id="${id}" aria-pressed="${id===k}">${esc(x.t.replace('Vademecum del ','').replace(/^./,c=>c.toUpperCase()))}</button>`).join('')}</div>
+   <button class="btn btn-s btn-sm" data-act="gprint">Stampa o salva PDF</button></div></div>
+  <div class="g-grid"><nav class="g-toc" aria-label="Indice"><p class="eyebrow">Indice</p>${secs.map(m=>`<button class="btn-link" data-act="goto" data-id="g-${m[1]}">${m[1]}. ${esc(m[2])}</button>`).join('')}</nav>
+  <article class="g-body">${mdHtml(g.md)}</article></div></main>`;
+}
+
 /* ---------- azioni ---------- */
 async function copy(t){try{await navigator.clipboard.writeText(t);toast('Copiato')}catch(e){prompt('Copia il testo:',t)}}
 const guestUrl=id=>location.origin+location.pathname+'#g'+id;
 const H={
  home(){if(S.guest){H.gclose();return}S.page=null;S.view='home';S.cur=null;render()},
- page(t){S.page=t.dataset.id||null;if(S.page==='accedi'){S.authMode=t.dataset.mode||'login';S.authMsg=''}render();scrollTo(0,0)},
+ page(t){try{if(new URLSearchParams(location.search).has('guida'))history.replaceState(null,'',location.pathname+location.hash)}catch(e){}S.page=t.dataset.id||null;if(S.page==='accedi'){S.authMode=t.dataset.mode||'login';S.authMsg=''}render();scrollTo(0,0)},
+ guida(t){S.guida=t.dataset.id;try{history.replaceState(null,'',location.pathname+'?guida='+S.guida)}catch(e){}render();scrollTo(0,0)},
+ gprint(){print()},
  goto(t){const el=document.getElementById(t.dataset.id);if(el)el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'})},
  export(t){exportFascicolo(t)},
  quote(t){openQuote(t.dataset.id)},
