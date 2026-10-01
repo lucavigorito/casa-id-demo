@@ -447,27 +447,37 @@ async function download(id){
 
 /* ---------- pagine informative ---------- */
 const FAQ=[
- ['Valore e avvio',[
-  ['In cosa è diverso da una cartella su Drive o Dropbox?','Casa ID è organizzato per immobile: sezioni pensate per i documenti della casa, professionisti che caricano direttamente nel tuo fascicolo, scadenze in evidenza e accessi che concedi per sezione e per un tempo limitato, con revoca e registro di chi ha consultato cosa.'],
-  ['Chi raccoglie i documenti che ho già?','Puoi caricarli tu, oppure invitare agenzia, tecnico e notaio a caricare quelli che hanno prodotto per te. Nella demo non è previsto un servizio di raccolta fatto da Casa ID al posto tuo.'],
-  ['Come recupero un documento che manca?','Dalla scheda Servizi chiedi un preventivo per la pratica (visura, ispezione, accesso agli atti, APE, CDU, copia di atto). Il professionista indica il costo totale e decidi tu se procedere. Il recupero non è automatico e dipende dagli enti coinvolti.'],
-  ['E se il mio professionista non usa Casa ID?','L\'invito resta in attesa finché non si registra con quella email: non possiamo garantire che aderisca. Nel frattempo puoi caricare tu i documenti che ti ha consegnato, oppure chiedere un preventivo a un professionista registrato.']]],
- ['Attendibilità',[
-  ['Il fascicolo è completo?','Casa ID mostra quali documenti sono presenti e in quali sezioni. Non valuta se il fascicolo è completo o sufficiente per una vendita, un mutuo o una pratica: per questo serve il parere del professionista che segue l\'operazione.'],
-  ['Cosa significa «Caricato da professionista»?','Indica chi ha caricato il documento: un utente registrato con ruolo di agenzia, broker, tecnico o notaio. Non è una verifica tecnica né una certificazione di conformità o di aggiornamento. Nella demo i ruoli sono dichiarati da chi si registra.'],
-  ['Banca e notaio accettano il fascicolo?','Puoi condividere i documenti con un link di sola lettura. Non esistono accordi con banche o notai: se e come useranno i documenti va concordato con loro.'],
-  ['Devo usare SPID o CIE ogni volta?','In questa demo si entra con email e password e la sessione resta attiva sul dispositivo. Nella versione definitiva il proprietario entrerà con SPID o CIE; le modalità di accesso successive sono ancora da definire. Chi riceve un link di sola lettura non deve registrarsi.']]],
- ['Dati e continuità',[
-  ['Chi può vedere i miei documenti?','Solo le persone che inviti, nelle sezioni e per il periodo che scegli, e chi apre un link di sola lettura che hai creato, finché non scade o lo revochi. Registrarsi su Casa ID non dà accesso ai fascicoli degli altri.'],
-  ['Dove sono conservati i file?','In un archivio privato su server nell\'Unione Europea (Irlanda), accessibile solo secondo i permessi del fascicolo.'],
-  ['Posso scaricare tutti i documenti?','Sì. Titolare e delegati possono usare «Scarica fascicolo»: ottieni un file ZIP con tutti i documenti, divisi per sezione, e un indice in formato CSV leggibile con Excel. Le regole in caso di disdetta o chiusura del servizio saranno definite prima del lancio.'],
-  ['Posso passare il fascicolo a chi compra?','Non ancora. Oggi puoi invitare l\'acquirente o condividere un link di sola lettura. Il trasferimento della titolarità è in valutazione.']]],
- ['Costi e utilizzo',[
-  ['Quanto costa?','La demo è gratuita. Il canone previsto è di 10 € all\'anno per immobile; rinnovo, disdetta e imposte saranno indicati prima dell\'attivazione a pagamento.'],
-  ['Quanto costano i servizi tecnici?','Ogni pratica ha un preventivo con il costo totale, comprensivo di compenso, sopralluoghi e oneri degli enti. Lo vedi prima di accettare; senza la tua conferma non si procede.'],
-  ['Quante richieste posso fare?','Nella demo non ci sono limiti. Eventuali limiti e condizioni della versione a pagamento saranno pubblicati insieme al prezzo.'],
-  ['Quali scadenze mi ricordate?','Quelle inserite nei documenti del fascicolo, per esempio APE, controllo caldaia o contratti, da chi li carica o da te. Casa ID non verifica gli adempimenti. Nella demo gli avvisi non vengono inviati.'],
-  ['A cosa serve il codice Casa ID?','Identifica il tuo fascicolo dentro Casa ID. Non è un dato catastale e non ha valore ufficiale.']]]
+ ['Cos\'è e come si inizia',[
+  ['Cos\'è Casa ID?','È il fascicolo digitale del tuo immobile: i documenti della casa divisi in sei sezioni (proprietà e atti, catasto, urbanistica, impianti ed energia, condominio, contratti), caricati da te e dai professionisti che inviti. Li ritrovi da telefono o computer e decidi tu con chi condividerli e per quanto tempo.'],
+  ['In cosa è diverso da una cartella su Drive o Dropbox?','È organizzato per immobile e per sezione; i professionisti caricano direttamente nel tuo fascicolo; gli accessi si concedono per sezione e con una scadenza; ogni consultazione resta nel registro; le scadenze dei documenti sono raccolte in un\'unica lista.'],
+  ['Devo caricare tutto io?','No. Puoi invitare agenzia, tecnico e notaio a caricare i documenti che hanno prodotto per te. Puoi aggiungere anche quelli che hai già in casa. Casa ID non raccoglie i documenti al posto tuo.'],
+  ['E se il mio professionista non usa Casa ID?','Lo inviti con la sua email: l\'invito resta in attesa finché non si registra con quell\'indirizzo, e vedrà solo le sezioni che hai scelto. Non possiamo garantire che aderisca: nel frattempo puoi caricare tu i documenti che ti ha consegnato.'],
+  ['Posso gestire più immobili?','Sì. Ogni immobile ha il suo fascicolo, con documenti e accessi separati.']]],
+ ['Documenti e attendibilità',[
+  ['Casa ID verifica i documenti?','No. Ogni documento mostra chi l\'ha caricato e quando. Contenuto, aggiornamento e conformità restano responsabilità di chi li ha prodotti. «Caricato da professionista» indica chi ha caricato il file, non una verifica tecnica.'],
+  ['Il fascicolo è completo?','Casa ID mostra quanti documenti ci sono e in quali sezioni. Non valuta se bastano per una vendita, un mutuo o una pratica: per questo serve il professionista che segue l\'operazione.'],
+  ['Come recupero un documento che manca?','Dalla scheda Servizi chiedi un preventivo (visura, ispezione ipotecaria, accesso agli atti, APE, CDU, copia di atto). Il professionista indica costo totale e tempi; si procede solo se accetti. I tempi dipendono anche dagli enti.'],
+  ['Banca e notaio accettano il fascicolo?','Puoi mandare loro un link di sola lettura alle sezioni utili. Non esistono accordi con banche o notai: se e come useranno i documenti va concordato con loro.'],
+  ['Il codice Casa ID ha valore ufficiale?','No. Identifica il fascicolo dentro Casa ID. Non è un dato catastale e non sostituisce visure o atti.']]],
+ ['Accessi e privacy',[
+  ['Chi può vedere i miei documenti?','Solo le persone che inviti, nelle sezioni e fino alla data che scegli, e chi apre un link di sola lettura che hai creato, finché non scade o lo revochi. Registrarsi su Casa ID non dà accesso ai fascicoli degli altri.'],
+  ['Che differenza c\'è tra titolare, delegato e professionista?','Il titolare gestisce tutto. Il delegato (per esempio un familiare) vede tutto e, se lo consenti, può invitare professionisti. Il professionista vede e carica solo nelle sezioni indicate, fino alla scadenza.'],
+  ['Cosa succede quando revoco un accesso?','Da quel momento la persona o il link non vedono più il fascicolo. Chi ha già scaricato un documento ne conserva la copia.'],
+  ['Dove sono conservati i file?','In un archivio privato su server nell\'Unione Europea, accessibile solo secondo i permessi del fascicolo. I dati non sono venduti né usati per pubblicità.']]],
+ ['Costi e servizi',[
+  ['Quanto costa?','Il canone previsto è di 10 € all\'anno per immobile. Rinnovo, disdetta e imposte saranno indicati prima dell\'attivazione a pagamento. La demo non ha costi.'],
+  ['I servizi tecnici sono compresi nel canone?','No. Ogni pratica ha un preventivo con il costo totale (compenso, eventuale sopralluogo, diritti e bolli degli enti). Lo vedi prima e decidi tu; senza conferma non si procede.'],
+  ['Chi risponde della pratica?','Il professionista che la svolge. Casa ID mette in contatto, raccoglie il preventivo e archivia il documento consegnato.']]],
+ ['Continuità',[
+  ['Posso scaricare tutti i documenti?','Sì. Titolare e delegati usano «Scarica fascicolo»: ottieni un file ZIP con i documenti divisi per sezione e un indice leggibile con Excel. Puoi farlo in qualsiasi momento.'],
+  ['Se disdico, perdo i documenti?','Puoi scaricare l\'intero fascicolo prima di disdire. Le regole su conservazione e cancellazione dopo la disdetta saranno pubblicate nelle condizioni del servizio.'],
+  ['Se vendo la casa, il fascicolo passa all\'acquirente?','Oggi no: il passaggio della titolarità non è disponibile. Puoi invitare l\'acquirente, condividere un link alle sezioni utili o consegnargli il fascicolo scaricato.'],
+  ['Mi avvisate delle scadenze?','Oggi le scadenze inserite nei documenti (APE, caldaia, contratti) sono raccolte in un\'unica lista. Gli avvisi via email non sono ancora attivi. Casa ID non verifica gli adempimenti.']]],
+ ['Sulla demo',[
+  ['Posso caricare documenti veri?','No. Questa è una versione di prova: usa solo documenti di esempio, senza dati reali tuoi o di altre persone.'],
+  ['Come si accede?','Nella demo con email e password. Nella versione definitiva il proprietario accederà con SPID o CIE. Chi riceve un link di sola lettura non deve registrarsi.'],
+  ['Cosa succede ai dati della demo?','Possono essere cancellati al termine del periodo di prova o in caso di aggiornamenti tecnici. Non usarla come archivio.'],
+  ['Ho trovato un problema: a chi lo dico?','Scrivi a chi ti ha invitato a provare Casa ID, indicando cosa stavi facendo e, se puoi, uno screenshot.']]]
 ];
 function faqView(){
   const cfg=window.CASAID_CONFIG||{};
