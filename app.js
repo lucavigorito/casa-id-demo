@@ -17,14 +17,16 @@ const SERV=[
  {id:'cdu',n:'CDU',d:'Certificato di destinazione urbanistica',sez:'urbanistica',r:'tecnico'},
  {id:'copia-atto',n:'Copia di atto notarile',d:'Rogito o atto di provenienza',sez:'atti',r:'notaio'}];
 const SERVN=Object.fromEntries(SERV.map(s=>[s.id,s]));
-const RSTATO={inviata:['In attesa di un professionista','p-warn'],lavorazione:['In lavorazione','p-info'],consegnata:['Consegnata','p-ok']};
+const RSTATO={inviata:['In attesa di preventivo','p-warn'],preventivo:['Preventivo da valutare','p-info'],lavorazione:['In lavorazione','p-info'],consegnata:['Consegnata','p-ok'],annullata:['Annullata','p-mute']};
+const DSTATO={verificato:['Caricato da professionista','st-ok'],caricato:['Caricato dal proprietario','st-mute'],richiesto:['Da recuperare','st-warn']};
+const euro=n=>n==null?'':Number(n).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
 const TABLES=['profiles','immobili','accessi','documenti','richieste','condivisioni','eventi'];
 const BUCKET='documenti';
 
 /* ---------- stato ---------- */
 let raf=0;
 const S={sb:null,state:'boot',session:null,data:Object.fromEntries(TABLES.map(t=>[t,{}])),
-  cur:null,view:'home',tab:'documenti',sez:'tutti',q:'',guest:null,guestData:null,guestPreview:false,seen:new Set(),authMode:'login',authMsg:''};
+  cur:null,view:'home',page:null,tab:'documenti',sez:'tutti',q:'',guest:null,guestData:null,guestPreview:false,seen:new Set(),authMode:'login',authMsg:''};
 
 /* ---------- utilità ---------- */
 const $=s=>document.querySelector(s);
@@ -93,10 +95,10 @@ const isOwnerLike=a=>a&&(a.livello==='titolare'||a.livello==='delegato');
 const canInvite=a=>a&&(a.livello==='titolare'||(a.livello==='delegato'&&a.puoInvitare));
 function myImmobili(){return vals('immobili').filter(i=>acc(i.id)).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''))}
 function docsOf(imId,a){const allow=sezOf(a);return vals('documenti').filter(d=>d.immobileId===imId&&allow.includes(d.sezione))}
-function completezza(imId){const ds=vals('documenti').filter(d=>d.immobileId===imId&&d.stato!=='richiesto');return Math.round(SEZ.filter(s=>ds.some(d=>d.sezione===s.id)).length/SEZ.length*100)}
+function presenza(imId){const ds=vals('documenti').filter(d=>d.immobileId===imId&&d.stato!=='richiesto');return {n:ds.length,sez:SEZ.filter(s=>ds.some(d=>d.sezione===s.id)).length}}
 function prossimaScadenza(imId,a){const ds=docsOf(imId,a).filter(d=>d.scadenza).sort((x,y)=>x.scadenza.localeCompare(y.scadenza));return ds.find(d=>daysTo(d.scadenza)>=0)||ds[ds.length-1]}
 function scadPill(iso){const n=daysTo(iso);if(n<0)return `<span class="pill p-crit">Scaduto</span>`;if(n<=90)return `<span class="pill p-warn">Tra ${n} giorni</span>`;return `<span class="pill p-ok">In regola</span>`}
-function incarichiMiei(){const u=me();if(!u||!PROF.includes(u.ruolo))return[];return vals('richieste').filter(r=>r.stato!=='consegnata'&&(r.assegnatoA===u.id||(!r.assegnatoA&&r.ruoloRichiesto===u.ruolo))).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))}
+function incarichiMiei(){const u=me();if(!u||!PROF.includes(u.ruolo))return[];return vals('richieste').filter(r=>!['consegnata','annullata'].includes(r.stato)&&(r.assegnatoA===u.id||(!r.assegnatoA&&r.ruoloRichiesto===u.ruolo))).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))}
 function badge(ruolo){return ruolo?`<span class="pill r-${esc(ruolo)}">${esc(RUOLO_BREVE[ruolo]||ruolo)}</span>`:''}
 
 /* ---------- avvio ---------- */
@@ -129,13 +131,15 @@ function draw(){
   if(S.state==='boot')h=loading('Avvio di Casa ID…');
   else if(S.state==='config')h=configView();
   else if(S.guest)h=guestView();
+  else if(S.page==='faq')h=faqView();
+  else if(S.page==='esempio')h=esempioView();
   else if(S.state==='auth')h=authView();
   else if(S.state==='loading'||!me())h=loading('Carico i tuoi fascicoli…');
   else h=shell();
   $('#app').innerHTML=h;
   if(fid){const el=document.getElementById(fid);if(el){el.focus();try{if(sel!=null)el.setSelectionRange(sel,sel)}catch(e){}}}
 }
-function barHtml(right=''){return `<header class="bar"><div class="bar-in"><button class="brand" data-act="home" aria-label="Casa ID, torna alla home">${LOGO()}<span><b>Casa ID</b><small>Carta d'Identità dell'Immobile</small></span></button><span class="test-pill">Versione demo</span><span class="bar-sp"></span>${right}</div></header>`}
+function barHtml(right=''){return `<header class="bar"><div class="bar-in"><button class="brand" data-act="home" aria-label="Casa ID, torna alla home">${LOGO()}<span><b>Casa ID</b><small>Carta d'Identità dell'Immobile</small></span></button><span class="test-pill">Versione demo</span><span class="bar-sp"></span><button class="btn-bar" style="border-color:transparent" data-act="page" data-id="faq">Domande frequenti</button>${right}</div></header>`}
 function loading(t){return barHtml()+`<main class="wrap"><div class="card empty"><p class="lead">${esc(t)}</p></div></main>`}
 function configView(){return barHtml()+`<main class="wrap"><div class="card empty"><h2>Configurazione mancante</h2><p class="lead">Inserisci in <b class="code">config.js</b> l'indirizzo del progetto Supabase e la chiave pubblica, poi ricarica la pagina.</p></div></main>`}
 
@@ -143,9 +147,16 @@ function configView(){return barHtml()+`<main class="wrap"><div class="card empt
 function authView(){
   const reg=S.authMode==='register';
   return barHtml()+`<main class="wrap"><div class="login">
-  <section><p class="eyebrow">Versione demo</p><h1>${reg?'Crea il tuo profilo di prova':'Accedi al tuo fascicolo'}</h1>
-   <p class="lead">Casa ID raccoglie in un unico fascicolo digitale i documenti del tuo immobile, caricati da agenzia, tecnico e notaio. In questa demo ti registri con email e password; nella versione definitiva il proprietario entrerà con SPID o CIE.</p>
-   <div class="note" style="margin-top:20px">Stai provando una versione dimostrativa: usa documenti di prova, non caricare documenti reali o dati personali di terzi.</div></section>
+  <section><p class="eyebrow">Casa ID · versione demo</p><h1>I documenti della tua casa, organizzati e pronti da condividere</h1>
+   <p class="lead">Casa ID riunisce il fascicolo del tuo immobile. I professionisti caricano i documenti prodotti per te; tu li ritrovi e decidi con chi condividerli e per quanto tempo.</p>
+   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:20px"><button type="button" class="btn btn-p" data-act="page" data-id="esempio">${I.eye} Guarda un fascicolo di esempio</button><button type="button" class="btn btn-s" data-act="page" data-id="faq">Domande frequenti</button></div>
+   <h2 style="font-size:18px;margin:28px 0 10px">Come si costruisce il tuo fascicolo</h2>
+   <div class="card list">
+    <div class="person" style="grid-template-columns:minmax(0,1fr)"><div><b>1 · Attivi il fascicolo</b><p class="muted" style="font-size:14px">Tu ti registri e inserisci l'immobile. Il fascicolo nasce vuoto, a tuo nome.</p></div></div>
+    <div class="person" style="grid-template-columns:minmax(0,1fr)"><div><b>2 · Raccogli i documenti che hai già</b><p class="muted" style="font-size:14px">Li carichi tu, oppure inviti agenzia, tecnico e notaio a caricare quelli che hanno prodotto per te. Se non aderiscono, puoi caricare tu quelli che ti hanno consegnato.</p></div></div>
+    <div class="person" style="grid-template-columns:minmax(0,1fr)"><div><b>3 · Recuperi quelli che mancano, se vuoi</b><p class="muted" style="font-size:14px">Richiedi la pratica (visura, accesso agli atti, APE…) a un professionista: ricevi un preventivo con il costo totale e decidi se procedere.</p></div></div>
+   </div>
+   <div class="note" style="margin-top:16px">Versione dimostrativa: accesso con email e password (nella versione definitiva SPID o CIE). Usa solo documenti di prova.</div></section>
   <form class="card form" data-form="${reg?'register':'login'}" autocomplete="on">
    <div class="tools" style="margin:0"><button type="button" class="chip" data-act="auth-mode" data-id="login" aria-pressed="${!reg}">Accedi</button><button type="button" class="chip" data-act="auth-mode" data-id="register" aria-pressed="${reg}">Registrati</button></div>
    ${reg?`<div class="fld"><label for="a-nome">Nome e cognome</label><input id="a-nome" name="nome" required autocomplete="name"></div>
@@ -155,11 +166,9 @@ function authView(){
    <div class="fld"><label for="a-pwd">Password</label><input id="a-pwd" name="pwd" type="password" required minlength="6" autocomplete="${reg?'new-password':'current-password'}"></div>
    <p class="err" id="a-err" ${S.authMsg?'':'hidden'}>${esc(S.authMsg)}</p>
    <button class="btn btn-p" type="submit" id="a-ok">${reg?'Crea profilo':'Accedi'}</button>
-   ${reg?'<p class="muted" style="font-size:13px">Se sei stato invitato in un fascicolo, registrati con la stessa email a cui è arrivato l\'invito: lo troverai subito.</p>':''}
+   ${reg?'<p class="muted" style="font-size:13px">Se sei stato invitato in un fascicolo, registrati con la stessa email dell\'invito: lo troverai subito.</p>':''}
   </form></div></main>`;
 }
-
-/* shell */
 function shell(){
   const u=me(),ims=myImmobili(),pro=PROF.includes(u.ruolo);
   if(S.cur&&!acc(S.cur))S.cur=null;
@@ -180,10 +189,10 @@ function shell(){
 
 function home(){
   const u=me(),ims=myImmobili(),pro=PROF.includes(u.ruolo);
-  const cards=ims.map(i=>{const a=acc(i.id),c=completezza(i.id),p=prossimaScadenza(i.id,a);return `<button class="card im-card" data-act="open" data-id="${esc(i.id)}">
+  const cards=ims.map(i=>{const a=acc(i.id),c=presenza(i.id),p=prossimaScadenza(i.id,a);return `<button class="card im-card" data-act="open" data-id="${esc(i.id)}">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="code muted">${esc(i.codice)}</span><span class="pill p-mute">${esc(LIV[a.livello])}</span></div>
     <h3>${esc(i.tipo)} · ${esc(i.indirizzo)}</h3><p class="muted">${esc(i.comune||'')}${i.categoria?' · Cat. '+esc(i.categoria):''}</p>
-    <div style="display:flex;align-items:center;gap:10px"><div class="bar-prog" style="flex:1"><i style="width:${c}%"></i></div><b class="num" style="font-size:13px">${c}%</b></div>
+    <p style="font-size:13px"><b class="num">${c.n}</b> documenti · sezioni con documenti: <b class="num">${c.sez} su 6</b></p>
     <p style="font-size:13px">${p?`${esc(p.titolo)}: <span class="${daysTo(p.scadenza)<0?'st-crit':daysTo(p.scadenza)<=90?'st-warn':'st-ok'}">scade il ${fmt(p.scadenza)}</span>`:'<span class="muted">Nessuna scadenza</span>'}</p>
     ${i.esempio?'<span class="pill p-info" style="align-self:flex-start">Dati di esempio</span>':''}</button>`}).join('');
   const inc=incarichiMiei();
@@ -199,7 +208,7 @@ function home(){
 /* fascicolo */
 function fascicolo(){
   const i=S.data.immobili[S.cur];if(!i)return home();
-  const a=acc(i.id),c=completezza(i.id),own=isOwnerLike(a);
+  const a=acc(i.id),c=presenza(i.id),own=isOwnerLike(a);
   if(!S.seen.has(i.id)){S.seen.add(i.id);evento(i.id,'ha aperto il fascicolo')}
   const tabs=[['documenti','Documenti'],['scadenze','Scadenze'],...(own?[['servizi','Servizi'],['accessi','Accessi'],['registro','Registro accessi']]:[])];
   if(!tabs.some(t=>t[0]===S.tab))S.tab='documenti';
@@ -209,16 +218,16 @@ function fascicolo(){
     <div class="t"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="eyebrow">Fascicolo immobile</span><span class="pill p-info code">${esc(i.codice)}</span>${i.esempio?'<span class="pill p-mute">Dati di esempio</span>':''}</div>
       <h1>${esc(i.tipo)} · ${esc(i.indirizzo)}</h1><p class="muted">${esc(i.comune||'')}${cat?' · '+esc(cat):''}</p>
       <p style="font-size:14px">Il tuo ruolo: <b>${esc(LIV[a.livello])}</b>${a.livello==='professionista'?' · sezioni: '+esc((a.sezioni||[]).map(s=>SEZN[s]).join(', '))+(a.scadenza?' · fino al '+fmt(a.scadenza):''):''}</p>
-      <div class="acts"><button class="btn btn-p" data-act="upload">${I.up} Carica documento</button><button class="btn btn-s" data-act="qr">${I.qr} Codice</button>${canInvite(a)?`<button class="btn btn-s" data-act="invite">${I.plus} Invita</button>`:''}</div></div>
-    <div class="comp"><span class="muted" style="font-size:13px">Completezza del fascicolo</span><b class="num">${c}%</b><div class="bar-prog"><i style="width:${c}%"></i></div><span class="muted" style="font-size:12px">Sezioni con almeno un documento</span></div>
+      <div class="acts"><button class="btn btn-p" data-act="upload">${I.up} Carica documento</button><button class="btn btn-s" data-act="qr">${I.qr} Codice</button>${own?`<button class="btn btn-s" data-act="export">Scarica fascicolo</button>`:''}${canInvite(a)?`<button class="btn btn-s" data-act="invite">${I.plus} Invita</button>`:''}</div></div>
+    <div class="comp"><span class="muted" style="font-size:13px">Documenti presenti nel fascicolo</span><b class="num">${c.n}</b><span style="font-size:13px">Sezioni con documenti: <strong class="num">${c.sez} su 6</strong></span><span class="muted" style="font-size:12px">Indica dove ci sono documenti, non se il fascicolo è completo per una pratica.</span></div>
   </section>
   <div class="tabs" role="tablist">${tabs.map(([k,n])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-act="tab" data-id="${k}">${n}</button>`).join('')}</div>
   ${body}`;
 }
 function docRow(d){
-  const st=d.stato==='verificato'?['Verificato','st-ok']:d.stato==='richiesto'?['Richiesto','st-warn']:['Caricato dal proprietario','st-mute'];
+  const st=DSTATO[d.stato]||DSTATO.caricato;
   return `<button class="row" data-act="${d.filePath?'view':'doc'}" data-id="${esc(d.id)}"><span class="ico ico-${esc(d.sezione)}">${I.file}</span>
-   <span style="min-width:0"><b>${esc(d.titolo)}</b><small>${esc(SEZN[d.sezione])} · ${d.dataDocumento?fmt(d.dataDocumento):'senza data'}${d.fileName?' · '+esc(d.fileName):d.stato==='richiesto'?'':' · nessun file'}</small></span>
+   <span style="min-width:0"><b>${esc(d.titolo)}</b><small>${esc(SEZN[d.sezione])} · ${d.dataDocumento?'del '+fmt(d.dataDocumento):'senza data'}${d.fileName?' · '+esc(d.fileName):d.stato==='richiesto'?'':' · nessun file'}</small></span>
    <span class="rb">${badge(d.caricatoRuolo||user(d.caricatoDa)?.ruolo)}</span>
    <span class="right"><span class="${st[1]}" style="font-weight:700">${st[0]}</span>${d.scadenza?`<span class="muted">scade ${fmt(d.scadenza)}</span>`:''}</span></button>`;
 }
@@ -229,19 +238,28 @@ function tabDocumenti(i,a){
   const chips=[['tutti','Tutti',all.length],...SEZ.filter(s=>allow.includes(s.id)).map(s=>[s.id,s.n,all.filter(d=>d.sezione===s.id).length])];
   return `<div class="tools">${chips.map(([k,n,c])=>`<button class="chip" data-act="sez" data-id="${k}" aria-pressed="${S.sez===k}">${esc(n)} <span class="num muted">${c}</span></button>`).join('')}</div>
   <div class="tools"><label class="search" for="q">${I.search}<input id="q" type="search" placeholder="Cerca un documento" value="${esc(S.q)}" aria-label="Cerca un documento"></label></div>
+  <p class="muted" style="font-size:13px;margin:-4px 0 12px">Lo stato indica chi ha caricato il documento e quando. Casa ID non certifica contenuto, aggiornamento o conformità dei documenti.</p>
   <div class="card list">${ds.map(docRow).join('')||`<div class="empty"><p class="lead">${all.length?'Nessun documento corrisponde alla ricerca.':'Ancora nessun documento in questo fascicolo.'}</p><button class="btn btn-p" data-act="upload">${I.up} Carica il primo documento</button></div>`}</div>`;
 }
 function tabScadenze(i,a){
   const ds=docsOf(i.id,a).filter(d=>d.scadenza).sort((x,y)=>x.scadenza.localeCompare(y.scadenza));
-  return `<div class="card list">${ds.map(d=>{const [y,m]=d.scadenza.split('-');return `<div class="deadline"><div class="d"><span>${MESI[+m-1]}</span><b class="num">${y}</b></div><div style="min-width:0"><b>${esc(d.titolo)}</b><p class="muted" style="font-size:13px">${esc(SEZN[d.sezione])} · scade il ${fmt(d.scadenza)}</p></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${scadPill(d.scadenza)}<button class="btn btn-g btn-sm" data-act="doc" data-id="${esc(d.id)}">Apri</button></div></div>`}).join('')||'<div class="empty"><p class="lead">Nessuna scadenza. Quando carichi un documento con una data di scadenza (APE, revisione caldaia, contratto) la trovi qui.</p></div>'}</div>
-  <p class="muted" style="font-size:13px;margin-top:12px">Nella versione definitiva il proprietario e il suo tecnico ricevono un avviso 90 giorni prima di ogni scadenza.</p>`;
+  return `<div class="card list">${ds.map(d=>{const [y,m]=d.scadenza.split('-');return `<div class="deadline"><div class="d"><span>${MESI[+m-1]}</span><b class="num">${y}</b></div><div style="min-width:0"><b>${esc(d.titolo)}</b><p class="muted" style="font-size:13px">${esc(SEZN[d.sezione])} · scade il ${fmt(d.scadenza)}</p></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${scadPill(d.scadenza)}<button class="btn btn-g btn-sm" data-act="doc" data-id="${esc(d.id)}">Apri</button></div></div>`}).join('')||'<div class="empty"><p class="lead">Nessuna scadenza inserita. Quando carichi un documento con una data di scadenza (APE, controllo caldaia, contratto) la trovi qui.</p></div>'}</div>
+  <p class="muted" style="font-size:13px;margin-top:12px">Qui compaiono solo le scadenze inserite nei documenti del fascicolo, da chi li carica o da te. Casa ID non verifica gli adempimenti. In questa demo gli avvisi non vengono inviati: nella versione definitiva arriveranno per email.</p>`;
 }
-function tabServizi(i){
+function tabServizi(i,a){
   const rs=vals('richieste').filter(r=>r.immobileId===i.id).sort((x,y)=>(y.createdAt||'').localeCompare(x.createdAt||''));
-  return `<p class="lead" style="margin-bottom:16px">Con l'abbonamento i servizi tecnici costano <b>0 € di servizio</b>. Restano dovuti solo diritti, tributi e bolli degli enti.</p>
-  <div class="svc">${SERV.map(s=>`<div class="card"><h3>${esc(s.n)}</h3><p class="muted" style="font-size:14px">${esc(s.d)}</p><p class="zero">0 € di servizio</p><button class="btn btn-s btn-sm" style="align-self:flex-start" data-act="req" data-id="${s.id}">Richiedi</button></div>`).join('')}</div>
+  const own=isOwnerLike(a);
+  return `<p class="lead" style="margin-bottom:6px">Richiedi a un professionista una pratica per recuperare o aggiornare un documento.</p>
+  <p class="muted" style="font-size:14px;margin-bottom:16px">Ricevi un preventivo con il costo totale (compenso del professionista e oneri degli enti) e decidi se accettare. Nessun costo prima della tua conferma. Il documento consegnato arriva nel fascicolo.</p>
+  <div class="svc">${SERV.map(s=>`<div class="card"><h3>${esc(s.n)}</h3><p class="muted" style="font-size:14px">${esc(s.d)}</p><p class="muted" style="font-size:13px">Esegue: ${esc(RUOLO[s.r])}${s.id==='ape'?' · richiede un sopralluogo':''}</p><button class="btn btn-s btn-sm" style="align-self:flex-start" data-act="req" data-id="${s.id}">Chiedi un preventivo</button></div>`).join('')}</div>
   <h2 class="section-t">Richieste per questo immobile</h2>
-  <div class="card list">${rs.map(r=>{const s=SERVN[r.servizio]||{n:r.servizio},st=RSTATO[r.stato]||['',''];return `<div class="person" style="grid-template-columns:minmax(0,1fr) auto"><div><b>${esc(s.n)}</b><p class="muted" style="font-size:13px">Richiesta da ${esc(uname(r.richiestoDa))} il ${fmt(r.createdAt)}${r.assegnatoA?' · affidata a '+esc(uname(r.assegnatoA)):''}${r.note?' · '+esc(r.note):''}</p></div><span class="pill ${st[1]}">${st[0]}</span></div>`}).join('')||'<div class="empty"><p class="lead">Nessuna richiesta finora.</p></div>'}</div>`;
+  <div class="card list">${rs.map(r=>{const s=SERVN[r.servizio]||{n:r.servizio},st=RSTATO[r.stato]||['',''];
+    const acts=own&&r.stato==='preventivo'?`<button class="btn btn-p btn-sm" data-act="qok" data-id="${esc(r.id)}">Accetta</button><button class="btn btn-g btn-sm" data-act="qno" data-id="${esc(r.id)}">Rifiuta</button>`:'';
+    const canc=own&&['inviata','preventivo'].includes(r.stato)?`<button class="btn btn-g btn-sm" data-act="qcancel" data-id="${esc(r.id)}">Annulla</button>`:'';
+    return `<div class="person" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><b>${esc(s.n)}</b> <span class="pill ${st[1]}">${st[0]}</span>
+      <p class="muted" style="font-size:13px">Richiesta da ${esc(uname(r.richiestoDa))} il ${fmt(r.createdAt)}${r.assegnatoA?' · '+esc(uname(r.assegnatoA)):''}${r.note?' · «'+esc(r.note)+'»':''}</p>
+      ${r.preventivoImporto!=null&&r.stato!=='inviata'?`<p style="font-size:14px;margin-top:4px">Preventivo: <b>${euro(r.preventivoImporto)}</b> totali${r.preventivoNote?' · '+esc(r.preventivoNote):''}</p>`:''}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${acts}${canc}</div></div>`}).join('')||'<div class="empty"><p class="lead">Nessuna richiesta finora.</p></div>'}</div>`;
 }
 function tabAccessi(i,a){
   const order=['titolare','delegato','professionista'];
@@ -249,8 +267,9 @@ function tabAccessi(i,a){
   const links=vals('condivisioni').filter(l=>l.immobileId===i.id&&l.attivo!==false).sort((x,y)=>(y.createdAt||'').localeCompare(x.createdAt||''));
   const row=p=>{const u=userByEmail(p.email),ru=u?.ruolo||'proprietario',scad=p.scadenza&&daysTo(p.scadenza)<0;
     const canRev=p.livello!=='titolare'&&p.email!==myEmail()&&(a.livello==='titolare'||(canInvite(a)&&p.invitatoDa===S.session.user.id));
-    return `<div class="person"><span class="av r-${esc(ru)}">${esc(ini(u?.nome||p.email))}</span><div style="min-width:0"><b>${esc(u?.nome||p.email)}</b> ${u?badge(u.ruolo):'<span class="pill p-warn">Non ancora registrato</span>'}<p class="muted" style="font-size:13px">${esc(p.email)} · ${esc(LIV[p.livello])}${p.livello==='professionista'?' · '+esc((p.sezioni||[]).map(s=>SEZN[s]).join(', ')):p.livello==='delegato'?(p.puoInvitare?' · può invitare professionisti':''):''}${p.scadenza?` · <span class="${scad?'st-crit':''}">${scad?'scaduto il':'fino al'} ${fmt(p.scadenza)}</span>`:''}${p.invitatoDa&&p.livello!=='titolare'?' · invitato da '+esc(uname(p.invitatoDa)):''}</p></div>${canRev?`<button class="btn btn-g btn-sm" data-act="revoke" data-id="${esc(p.id)}">Revoca</button>`:''}</div>`};
-  return `<div class="two"><section class="card"><div class="box-h"><h3>Persone con accesso</h3>${canInvite(a)?`<button class="btn btn-p btn-sm" data-act="invite">${I.plus} Invita</button>`:''}</div><div class="list">${ps.map(row).join('')}</div></section>
+    return `<div class="person"><span class="av r-${esc(ru)}">${esc(ini(u?.nome||p.email))}</span><div style="min-width:0"><b>${esc(u?.nome||p.email)}</b> ${u?badge(u.ruolo):'<span class="pill p-warn">Invito in attesa</span>'}<p class="muted" style="font-size:13px">${esc(p.email)} · ${esc(LIV[p.livello])}${p.livello==='professionista'?' · '+esc((p.sezioni||[]).map(s=>SEZN[s]).join(', ')):p.livello==='delegato'?(p.puoInvitare?' · può invitare professionisti':''):''}${p.scadenza?` · <span class="${scad?'st-crit':''}">${scad?'scaduto il':'fino al'} ${fmt(p.scadenza)}</span>`:''}${p.invitatoDa&&p.livello!=='titolare'?' · invitato da '+esc(uname(p.invitatoDa)):''}</p></div>${canRev?`<button class="btn btn-g btn-sm" data-act="revoke" data-id="${esc(p.id)}">Revoca</button>`:''}</div>`};
+  const pending=ps.some(p=>!userByEmail(p.email));
+  return `${pending?'<div class="note" style="margin-bottom:16px">Chi ha un invito in attesa vedrà il fascicolo appena si registra con quella email. Se un professionista non usa Casa ID, puoi caricare tu i documenti che ti ha consegnato.</div>':''}<div class="two"><section class="card"><div class="box-h"><h3>Persone con accesso</h3>${canInvite(a)?`<button class="btn btn-p btn-sm" data-act="invite">${I.plus} Invita</button>`:''}</div><div class="list">${ps.map(row).join('')}</div></section>
   <section class="card"><div class="box-h"><h3>Link di sola lettura</h3>${canInvite(a)?`<button class="btn btn-s btn-sm" data-act="glink">${I.link} Crea link</button>`:''}</div><div class="list">${links.map(l=>{const exp=daysTo(l.scadenza)<0;return `<div class="person" style="grid-template-columns:minmax(0,1fr)"><div style="min-width:0"><b>${esc(l.etichetta)}</b><p class="muted" style="font-size:13px">${esc((l.sezioni||[]).map(s=>SEZN[s]).join(', '))} · <span class="${exp?'st-crit':''}">${exp?'scaduto':'scade'} il ${fmt(l.scadenza)}</span></p></div><div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-g btn-sm" data-act="gcopy" data-id="${esc(l.id)}">Copia link</button><button class="btn btn-g btn-sm" data-act="gprev" data-id="${esc(l.id)}">Anteprima</button>${canInvite(a)?`<button class="btn btn-g btn-sm" data-act="grevoke" data-id="${esc(l.id)}">Revoca</button>`:''}</div></div>`}).join('')||'<div class="empty"><p class="muted">Crea un link per la banca, l\'acquirente o l\'inquilino: vedono solo le sezioni che scegli, fino alla data che decidi, senza bisogno di registrarsi.</p></div>'}</div></section></div>`;
 }
 function tabRegistro(i){
@@ -260,15 +279,16 @@ function tabRegistro(i){
 }
 
 /* incarichi */
-function incRow(r){const s=SERVN[r.servizio]||{n:r.servizio},im=S.data.immobili[r.immobileId],st=RSTATO[r.stato]||['',''];
-  return `<div class="person" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><b>${esc(s.n)}</b> <span class="pill ${st[1]}">${st[0]}</span><p class="muted" style="font-size:13px">${im?esc(im.tipo+' · '+im.indirizzo+', '+(im.comune||'')):'Immobile di un cliente'} · richiesta il ${fmt(r.createdAt)}${r.note?' · «'+esc(r.note)+'»':''}</p></div>
-  <div style="display:flex;gap:6px;flex-wrap:wrap">${r.assegnatoA===S.session.user.id?`<button class="btn btn-p btn-sm" data-act="deliver" data-id="${esc(r.id)}">${I.up} Consegna</button>`:`<button class="btn btn-s btn-sm" data-act="take" data-id="${esc(r.id)}">Prendi in carico</button>`}</div></div>`}
+function incRow(r){const s=SERVN[r.servizio]||{n:r.servizio},im=S.data.immobili[r.immobileId],st=RSTATO[r.stato]||['',''],mine=r.assegnatoA===S.session.user.id;
+  const act=r.stato==='lavorazione'&&mine?`<button class="btn btn-p btn-sm" data-act="deliver" data-id="${esc(r.id)}">${I.up} Consegna</button>`
+    :r.stato==='preventivo'&&mine?`<button class="btn btn-s btn-sm" data-act="quote" data-id="${esc(r.id)}">Modifica preventivo</button>`
+    :`<button class="btn btn-p btn-sm" data-act="quote" data-id="${esc(r.id)}">Invia preventivo</button>`;
+  return `<div class="person" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><b>${esc(s.n)}</b> <span class="pill ${st[1]}">${r.stato==='preventivo'&&mine?'In attesa del cliente':st[0]}</span><p class="muted" style="font-size:13px">${im?esc(im.tipo+' · '+im.indirizzo+', '+(im.comune||'')):'Immobile di un cliente: l\'indirizzo è visibile dopo l\'accettazione'} · richiesta il ${fmt(r.createdAt)}${r.note?' · «'+esc(r.note)+'»':''}</p>${r.preventivoImporto!=null&&mine?`<p style="font-size:14px">Tuo preventivo: <b>${euro(r.preventivoImporto)}</b></p>`:''}</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap">${act}</div></div>`}
 function incarichiView(){const inc=incarichiMiei(),done=vals('richieste').filter(r=>r.assegnatoA===S.session.user.id&&r.stato==='consegnata');
-  return `<div class="hello"><p class="eyebrow">Servizi in app</p><h1>Incarichi dai servizi</h1><p class="lead">Richieste degli abbonati per la tua categoria. Prendi in carico, lavora la pratica e consegna: il documento arriva nel fascicolo del cliente con il tuo nome.</p></div>
+  return `<div class="hello"><p class="eyebrow">Servizi in app</p><h1>Incarichi dai servizi</h1><p class="lead">Richieste dei proprietari per la tua categoria. Invia un preventivo con il costo totale; se il cliente accetta, ricevi l'accesso alla sezione che serve e consegni il documento nel suo fascicolo.</p></div>
   <div class="card list">${inc.map(incRow).join('')||'<div class="empty"><p class="lead">Nessun incarico da gestire in questo momento.</p></div>'}</div>
-  ${done.length?`<h2 class="section-t">Consegnati</h2><div class="card list">${done.map(r=>`<div class="person" style="grid-template-columns:minmax(0,1fr) auto"><div><b>${esc(SERVN[r.servizio]?.n||r.servizio)}</b><p class="muted" style="font-size:13px">${esc(S.data.immobili[r.immobileId]?.indirizzo||'')} · consegnato il ${fmt(r.consegnataIl)}</p></div><span class="pill p-ok">Consegnata</span></div>`).join('')}</div>`:''}`}
-
-/* ospite */
+  ${done.length?`<h2 class="section-t">Consegnati</h2><div class="card list">${done.map(r=>`<div class="person" style="grid-template-columns:minmax(0,1fr) auto"><div><b>${esc(SERVN[r.servizio]?.n||r.servizio)}</b><p class="muted" style="font-size:13px">${esc(S.data.immobili[r.immobileId]?.indirizzo||'')} · consegnato il ${fmt(r.consegnataIl)}${r.preventivoImporto!=null?' · '+euro(r.preventivoImporto):''}</p></div><span class="pill p-ok">Consegnata</span></div>`).join('')}</div>`:''}`}
 async function loadGuest(){
   if(!S.sb||!S.guest)return;
   const {data,error}=await S.sb.rpc('guest_view',{token:S.guest});
@@ -320,7 +340,7 @@ function openDoc(id){
    ${d.filePath?`<button type="button" class="btn btn-p" style="align-self:flex-start" data-act="view" data-id="${esc(id)}">${I.eye} Visualizza documento</button>`:''}
    <dl class="kv"><dt>Sezione</dt><dd>${esc(SEZN[d.sezione])}</dd><dt>Caricato da</dt><dd>${esc(uname(d.caricatoDa))} ${badge(d.caricatoRuolo)}</dd>
    <dt>Data documento</dt><dd>${fmt(d.dataDocumento)}</dd><dt>Caricato il</dt><dd>${fmtT(d.createdAt)}</dd>
-   <dt>Stato</dt><dd>${d.stato==='verificato'?'<span class="st-ok"><b>Verificato</b></span> · caricato da un professionista':d.stato==='richiesto'?'<span class="st-warn"><b>Richiesto</b></span> · in attesa del professionista':'Caricato dal proprietario'}</dd>
+   <dt>Stato</dt><dd>${(DSTATO[d.stato]||DSTATO.caricato)[0]}<br><span class="muted" style="font-size:13px">Indica chi ha caricato il documento. Casa ID non ne certifica contenuto o conformità.</span></dd>
    <dt>File</dt><dd>${d.fileName?esc(d.fileName)+' · '+size(d.size):'Nessun file allegato'}</dd>
    ${d.note?`<dt>Note</dt><dd>${esc(d.note)}</dd>`:''}</dl>
    <form class="fgrid" data-form="scad" style="align-items:end"><input type="hidden" name="docId" value="${esc(id)}"><div class="fld"><label for="d-scad">Scadenza</label><input id="d-scad" name="scadenza" type="date" value="${esc(d.scadenza||'')}"></div><button class="btn btn-s" type="submit">Salva scadenza</button></form>`,
@@ -366,14 +386,22 @@ function openNewIm(){
 }
 function openReq(sid){
   const s=SERVN[sid];
-  modal('Richiedi: '+s.n,`<p class="lead">${esc(s.d)}.</p><div class="note"><b>0 € di servizio</b> con l'abbonamento. Diritti, tributi e bolli degli enti ti verranno indicati dal professionista prima di procedere.</div>
-   <input type="hidden" name="servizio" value="${esc(sid)}"><div class="fld"><label for="r-note">Note per il professionista (facoltative)</label><textarea id="r-note" name="note" placeholder="Es. mi serve entro fine mese per il mutuo"></textarea></div>`,
-   `<button type="button" class="btn btn-s" data-act="close">Annulla</button><button type="submit" class="btn btn-p">Invia richiesta</button>`,'req');
+  modal('Preventivo: '+s.n,`<p class="lead">${esc(s.d)}.</p><div class="note">Un ${esc((RUOLO[s.r]||'').toLowerCase())} ti invierà un preventivo con il <b>costo totale</b>: compenso, eventuali sopralluoghi e oneri degli enti. Decidi tu se accettare; nessun costo prima della conferma. Nella demo non avviene alcun pagamento.</div>
+   <input type="hidden" name="servizio" value="${esc(sid)}"><div class="fld"><label for="r-note">Cosa ti serve (facoltativo)</label><textarea id="r-note" name="note" placeholder="Es. mi serve entro fine mese per il mutuo"></textarea></div>`,
+   `<button type="button" class="btn btn-s" data-act="close">Annulla</button><button type="submit" class="btn btn-p">Chiedi il preventivo</button>`,'req');
+}
+function openQuote(rid){
+  const r=S.data.richieste[rid];if(!r)return;const s=SERVN[r.servizio]||{n:r.servizio};
+  modal('Preventivo: '+s.n,`<p class="muted">${r.note?'Richiesta del cliente: «'+esc(r.note)+'»':'Il cliente non ha aggiunto note.'}</p>
+   <input type="hidden" name="rid" value="${esc(rid)}">
+   <div class="fld"><label for="q-imp">Importo totale (€)</label><input id="q-imp" name="importo" type="number" min="0" step="0.01" required value="${r.preventivoImporto??''}" inputmode="decimal"><span class="muted" style="font-size:13px">Comprendi compenso, sopralluoghi e oneri degli enti: è la cifra che il cliente vede prima di accettare.</span></div>
+   <div class="fld"><label for="q-note">Dettaglio (facoltativo)</label><textarea id="q-note" name="note" placeholder="Es. compenso 120 € + diritti di segreteria 30 €; consegna in 10 giorni lavorativi">${esc(r.preventivoNote||'')}</textarea></div>
+   <p class="err" id="q-err" hidden></p>`,
+   `<button type="button" class="btn btn-s" data-act="close">Annulla</button><button type="submit" class="btn btn-p" id="q-ok">Invia preventivo</button>`,'quote');
 }
 function openCode(){const i=S.data.immobili[S.cur];
-  modal('Codice Casa ID',`<div style="display:flex;flex-direction:column;gap:10px"><span class="muted">Codice univoco dell'immobile</span><b class="code" style="font-size:28px">${esc(i.codice)}</b><p class="muted" style="font-size:14px">Stampalo sulla tessera o nel contratto: un professionista autorizzato lo usa per trovare il fascicolo giusto.</p><button type="button" class="btn btn-s btn-sm" style="align-self:flex-start" data-act="copy" data-id="${esc(i.codice)}">Copia codice</button></div>`,
+  modal('Codice Casa ID',`<div style="display:flex;flex-direction:column;gap:10px"><span class="muted">Codice del fascicolo</span><b class="code" style="font-size:28px">${esc(i.codice)}</b><p style="font-size:14px">Il codice identifica questo fascicolo dentro Casa ID, per esempio quando ne parli con un professionista o con l'assistenza.</p><p class="muted" style="font-size:14px">Non è un dato catastale, non sostituisce foglio, particella e subalterno e non ha valore di attestazione ufficiale.</p><button type="button" class="btn btn-s btn-sm" style="align-self:flex-start" data-act="copy" data-id="${esc(i.codice)}">Copia codice</button></div>`,
   `<button type="button" class="btn btn-p" data-act="close">Chiudi</button>`)}
-
 /* ---------- visualizzatore in app ---------- */
 const PDFJS='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
 function loadScript(src){return new Promise((ok,ko)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>ko(new Error('script'));document.head.appendChild(s)})}
@@ -416,13 +444,99 @@ async function download(id){
   catch(e){toast('Download non riuscito')}
 }
 
+
+/* ---------- pagine informative ---------- */
+const FAQ=[
+ ['Valore e avvio',[
+  ['In cosa è diverso da una cartella su Drive o Dropbox?','Casa ID è organizzato per immobile: sezioni pensate per i documenti della casa, professionisti che caricano direttamente nel tuo fascicolo, scadenze in evidenza e accessi che concedi per sezione e per un tempo limitato, con revoca e registro di chi ha consultato cosa.'],
+  ['Chi raccoglie i documenti che ho già?','Puoi caricarli tu, oppure invitare agenzia, tecnico e notaio a caricare quelli che hanno prodotto per te. Nella demo non è previsto un servizio di raccolta fatto da Casa ID al posto tuo.'],
+  ['Come recupero un documento che manca?','Dalla scheda Servizi chiedi un preventivo per la pratica (visura, ispezione, accesso agli atti, APE, CDU, copia di atto). Il professionista indica il costo totale e decidi tu se procedere. Il recupero non è automatico e dipende dagli enti coinvolti.'],
+  ['E se il mio professionista non usa Casa ID?','L\'invito resta in attesa finché non si registra con quella email: non possiamo garantire che aderisca. Nel frattempo puoi caricare tu i documenti che ti ha consegnato, oppure chiedere un preventivo a un professionista registrato.']]],
+ ['Attendibilità',[
+  ['Il fascicolo è completo?','Casa ID mostra quali documenti sono presenti e in quali sezioni. Non valuta se il fascicolo è completo o sufficiente per una vendita, un mutuo o una pratica: per questo serve il parere del professionista che segue l\'operazione.'],
+  ['Cosa significa «Caricato da professionista»?','Indica chi ha caricato il documento: un utente registrato con ruolo di agenzia, broker, tecnico o notaio. Non è una verifica tecnica né una certificazione di conformità o di aggiornamento. Nella demo i ruoli sono dichiarati da chi si registra.'],
+  ['Banca e notaio accettano il fascicolo?','Puoi condividere i documenti con un link di sola lettura. Non esistono accordi con banche o notai: se e come useranno i documenti va concordato con loro.'],
+  ['Devo usare SPID o CIE ogni volta?','In questa demo si entra con email e password e la sessione resta attiva sul dispositivo. Nella versione definitiva il proprietario entrerà con SPID o CIE; le modalità di accesso successive sono ancora da definire. Chi riceve un link di sola lettura non deve registrarsi.']]],
+ ['Dati e continuità',[
+  ['Chi può vedere i miei documenti?','Solo le persone che inviti, nelle sezioni e per il periodo che scegli, e chi apre un link di sola lettura che hai creato, finché non scade o lo revochi. Registrarsi su Casa ID non dà accesso ai fascicoli degli altri.'],
+  ['Dove sono conservati i file?','In un archivio privato su server nell\'Unione Europea (Irlanda), accessibile solo secondo i permessi del fascicolo.'],
+  ['Posso scaricare tutti i documenti?','Sì. Titolare e delegati possono usare «Scarica fascicolo»: ottieni un file ZIP con tutti i documenti, divisi per sezione, e un indice in formato CSV leggibile con Excel. Le regole in caso di disdetta o chiusura del servizio saranno definite prima del lancio.'],
+  ['Posso passare il fascicolo a chi compra?','Non ancora. Oggi puoi invitare l\'acquirente o condividere un link di sola lettura. Il trasferimento della titolarità è in valutazione.']]],
+ ['Costi e utilizzo',[
+  ['Quanto costa?','La demo è gratuita. Il canone previsto è di 10 € all\'anno per immobile; rinnovo, disdetta e imposte saranno indicati prima dell\'attivazione a pagamento.'],
+  ['Quanto costano i servizi tecnici?','Ogni pratica ha un preventivo con il costo totale, comprensivo di compenso, sopralluoghi e oneri degli enti. Lo vedi prima di accettare; senza la tua conferma non si procede.'],
+  ['Quante richieste posso fare?','Nella demo non ci sono limiti. Eventuali limiti e condizioni della versione a pagamento saranno pubblicati insieme al prezzo.'],
+  ['Quali scadenze mi ricordate?','Quelle inserite nei documenti del fascicolo, per esempio APE, controllo caldaia o contratti, da chi li carica o da te. Casa ID non verifica gli adempimenti. Nella demo gli avvisi non vengono inviati.'],
+  ['A cosa serve il codice Casa ID?','Identifica il tuo fascicolo dentro Casa ID. Non è un dato catastale e non ha valore ufficiale.']]]
+];
+function faqView(){
+  const cfg=window.CASAID_CONFIG||{};
+  const back=`<button class="btn-bar" data-act="page" data-id="">${S.session?'Torna ai fascicoli':'Torna all\'accesso'}</button>`;
+  return barHtml(back)+`<main class="wrap" style="max-width:860px"><div class="hello"><p class="eyebrow">Casa ID · versione demo</p><h1>Domande frequenti</h1><p class="lead">Cosa fa Casa ID oggi, cosa dipende dai professionisti e cosa è ancora in definizione.</p></div>
+  ${FAQ.map(([t,qs])=>`<h2 class="section-t">${esc(t)}</h2><div class="card list">${qs.map(([q,a])=>`<details class="person" style="display:block"><summary style="cursor:pointer;font-weight:700;font-size:16px">${esc(q)}</summary><p style="margin-top:8px;color:var(--ink-2)">${esc(a)}</p></details>`).join('')}</div>`).join('')}
+  <h2 class="section-t">Chi gestisce la demo</h2><div class="card" style="padding:20px">${cfg.GESTORE?`<p><b>${esc(cfg.GESTORE)}</b></p>`:'<p>Versione dimostrativa in fase di test con un gruppo ristretto di utenti.</p>'}${cfg.CONTATTO?`<p class="muted" style="margin-top:6px">Assistenza e segnalazioni: <b>${esc(cfg.CONTATTO)}</b></p>`:''}</div></main>`;
+}
+const ESEMPIO={codice:'CID-ESEM-PIO1',tipo:'Appartamento',indirizzo:'Via dei Mille 14',comune:'Salerno',cat:'Fg. 12 · Part. 348 · Sub. 7 · Cat. A/2',
+ docs:[['Atto di compravendita','atti','2024-03-14',null,'notaio','verificato'],['Nota di trascrizione','atti','2024-04-02',null,'notaio','verificato'],['Visura catastale storica','catasto','2024-01-15',null,'agenzia','verificato'],['Planimetria catastale','catasto','2024-01-15',null,'agenzia','verificato'],['Relazione di conformità urbanistica','urbanistica','2024-02-20',null,'tecnico','verificato'],['Attestato di prestazione energetica','impianti','2018-03-20','2028-03-20','tecnico','verificato'],['Libretto d\'impianto caldaia','impianti','2024-11-15',null,'tecnico','verificato'],['Garanzia della caldaia','contratti','2023-10-02','2028-10-02','proprietario','caricato'],['Certificato di agibilità','urbanistica',null,null,'proprietario','richiesto']],
+ accessi:[['Mario Rossi','proprietario','Titolare'],['Anna Rossi','familiare','Delegata · può invitare professionisti'],['Geom. Luca Bianchi','tecnico','Urbanistica, Impianti ed energia · fino al 31/03/2027'],['Banca per il mutuo','','Link di sola lettura · Proprietà e atti, Catasto · scade il 31/12/2026']]};
+function esempioView(){
+  const e=ESEMPIO;
+  const back=`<button class="btn-bar" data-act="page" data-id="">${S.session?'Torna ai fascicoli':'Registrati o accedi'}</button>`;
+  const ds=e.docs.map(([t,sez,dt,sc,r,st])=>{const x=DSTATO[st];return `<div class="row" style="cursor:default"><span class="ico ico-${sez}">${I.file}</span><span style="min-width:0"><b>${esc(t)}</b><small>${esc(SEZN[sez])} · ${dt?'del '+fmt(dt):'senza data'}</small></span><span class="rb">${badge(r)}</span><span class="right"><span class="${x[1]}" style="font-weight:700">${x[0]}</span>${sc?`<span class="muted">scade ${fmt(sc)}</span>`:''}</span></div>`}).join('');
+  return barHtml(back)+`<div class="guest-bar">Esempio illustrativo con dati fittizi: nessun documento reale</div><main class="wrap">
+  <section class="card fhead"><div class="t"><span class="eyebrow">Fascicolo immobile · esempio</span><h1>${e.tipo} · ${e.indirizzo}</h1><p class="muted">${e.comune} · ${e.cat}</p>
+   <p style="font-size:15px">Così appare un fascicolo dopo qualche settimana: il notaio ha caricato gli atti, l'agenzia il catasto, il tecnico le pratiche e l'APE; il proprietario la garanzia della caldaia. Il certificato di agibilità manca ed è da recuperare.</p>
+   <div class="acts"><button class="btn btn-p" data-act="page" data-id="">Crea il tuo fascicolo</button><button class="btn btn-s" data-act="page" data-id="faq">Domande frequenti</button></div></div>
+   <div class="comp"><span class="muted" style="font-size:13px">Documenti presenti nel fascicolo</span><b class="num">8</b><span style="font-size:13px">Sezioni con documenti: <strong>5 su 6</strong></span></div></section>
+  <h2 class="section-t">1 · Ritrovi i documenti</h2><p class="muted" style="font-size:14px;margin-bottom:12px">Ogni documento mostra chi l'ha caricato e la sua data. Lo stato non è una certificazione.</p><div class="card list">${ds}</div>
+  <h2 class="section-t">2 · Tieni d'occhio le scadenze inserite</h2><div class="card list"><div class="deadline"><div class="d"><span>mar</span><b class="num">2028</b></div><div><b>Attestato di prestazione energetica</b><p class="muted" style="font-size:13px">Data inserita dal tecnico che ha caricato l'APE</p></div><span class="pill p-ok">In regola</span></div><div class="deadline"><div class="d"><span>ott</span><b class="num">2028</b></div><div><b>Garanzia della caldaia</b><p class="muted" style="font-size:13px">Data inserita dal proprietario</p></div><span class="pill p-ok">In regola</span></div></div>
+  <h2 class="section-t">3 · Decidi chi vede cosa, e fino a quando</h2><div class="card list">${e.accessi.map(([n,r,d])=>`<div class="person"><span class="av r-${r||'proprietario'}">${esc(ini(n))}</span><div><b>${esc(n)}</b> ${badge(r)}<p class="muted" style="font-size:13px">${esc(d)}</p></div><span class="muted" style="font-size:13px">${r==='proprietario'?'':'revocabile'}</span></div>`).join('')}</div>
+  <h2 class="section-t">4 · Recuperi ciò che manca, con un preventivo</h2><div class="card" style="padding:20px;display:flex;flex-direction:column;gap:6px"><b>Accesso agli atti per il certificato di agibilità</b><p class="muted" style="font-size:14px">Il proprietario chiede la pratica; un tecnico risponde con il costo totale (compenso e oneri degli enti). Solo se il proprietario accetta, il tecnico ottiene accesso alla sezione Urbanistica e consegna il documento nel fascicolo.</p></div>
+  </main>`;
+}
+
+/* ---------- esportazione del fascicolo ---------- */
+let zipReady=null;
+function ensureZip(){if(!zipReady)zipReady=loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js').then(()=>window.JSZip).catch(e=>{zipReady=null;throw e});return zipReady}
+async function exportFascicolo(btn){
+  const i=S.data.immobili[S.cur],a=acc(S.cur);if(!i||!isOwnerLike(a))return;
+  const ds=docsOf(i.id,a).sort((x,y)=>x.sezione.localeCompare(y.sezione));
+  const old=btn.textContent;btn.disabled=true;btn.textContent='Preparo il file…';
+  try{
+    const JSZip=await ensureZip(),zip=new JSZip(),used=new Set();
+    const csvq=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+    const rows=[['Titolo','Sezione','Data documento','Scadenza','Caricato da','Ruolo','Stato','Note','File nello ZIP']];
+    let n=0,missing=0;
+    for(const d of ds){
+      let fname='';
+      if(d.filePath){try{const blob=await getBlob(d.filePath);const ext=(d.fileName||'').split('.').pop()||'pdf';
+        let base=`${SEZN[d.sezione]}/${(d.titolo||'documento').replace(/[\\/:*?"<>|]+/g,'-').slice(0,80)}`,k=1;fname=`${base}.${ext}`;while(used.has(fname))fname=`${base} (${++k}).${ext}`;used.add(fname);
+        zip.file(fname,blob);n++;btn.textContent=`Preparo il file… ${n}`}catch(e){missing++;fname='(non scaricabile)'}}
+      rows.push([d.titolo,SEZN[d.sezione],fmt(d.dataDocumento),d.scadenza?fmt(d.scadenza):'',uname(d.caricatoDa),RUOLO_BREVE[d.caricatoRuolo]||'',(DSTATO[d.stato]||DSTATO.caricato)[0],d.note||'',fname]);
+    }
+    zip.file('indice.csv','﻿'+rows.map(r=>r.map(csvq).join(';')).join('\r\n'));
+    zip.file('LEGGIMI.txt',`Fascicolo Casa ID ${i.codice}\r\n${i.tipo} - ${i.indirizzo}, ${i.comune}\r\nEsportato il ${fmtT(now())}\r\n\r\nI documenti sono divisi in cartelle per sezione.\r\nIl file indice.csv (apribile con Excel) elenca tutti i documenti con date, autore e note,\r\ncompresi quelli senza file allegato.\r\n`);
+    const out=await zip.generateAsync({type:'blob'});
+    const url=URL.createObjectURL(out),l=document.createElement('a');l.href=url;l.download=`CasaID-${i.codice}.zip`;document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);
+    evento(i.id,'ha scaricato l\'intero fascicolo');
+    toast(missing?`Fascicolo scaricato, ${missing} file non disponibili`:'Fascicolo scaricato');
+  }catch(e){console.warn(e);toast('Esportazione non riuscita. Riprova.')}
+  finally{btn.disabled=false;btn.textContent=old}
+}
+
 /* ---------- azioni ---------- */
 async function copy(t){try{await navigator.clipboard.writeText(t);toast('Copiato')}catch(e){prompt('Copia il testo:',t)}}
 const guestUrl=id=>location.origin+location.pathname+'#g'+id;
 const H={
- home(){if(S.guest){H.gclose();return}S.view='home';S.cur=null;render()},
+ home(){if(S.guest){H.gclose();return}S.page=null;S.view='home';S.cur=null;render()},
+ page(t){S.page=t.dataset.id||null;if(!S.page&&!S.session)S.authMode='register';render();scrollTo(0,0)},
+ export(t){exportFascicolo(t)},
+ quote(t){openQuote(t.dataset.id)},
+ async qok(t){t.disabled=true;try{const {error}=await S.sb.rpc('rispondi_preventivo',{rid:t.dataset.id,accetta:true});if(error)throw error;await loadAll();toast('Preventivo accettato: il professionista può procedere')}catch(e){toast(errMsg(e));t.disabled=false}},
+ async qno(t){t.disabled=true;try{const {error}=await S.sb.rpc('rispondi_preventivo',{rid:t.dataset.id,accetta:false});if(error)throw error;await loadAll();toast('Preventivo rifiutato: la richiesta torna disponibile')}catch(e){toast(errMsg(e));t.disabled=false}},
+ async qcancel(t){if(t.dataset.confirm!=='1'){t.dataset.confirm='1';t.textContent='Conferma annullamento';return}try{const {error}=await S.sb.rpc('annulla_richiesta',{rid:t.dataset.id});if(error)throw error;await loadAll();toast('Richiesta annullata')}catch(e){toast(errMsg(e))}},
  'auth-mode'(t){S.authMode=t.dataset.id;S.authMsg='';render()},
- async logout(){await S.sb.auth.signOut()},
+ async logout(){S.page=null;await S.sb.auth.signOut()},
  open(t){S.cur=t.dataset.id;S.view='fascicolo';S.tab='documenti';S.sez='tutti';S.q='';render();scrollTo(0,0)},
  incarichi(){S.view='incarichi';S.cur=null;render()},
  tab(t){S.tab=t.dataset.id;render()},
@@ -490,6 +604,9 @@ const F={
      else evento(imId,`ha caricato «${titolo}» in ${SEZN[f.sezione.value]}`);
      reloadSoon();closeModal();toast(f.richiestaId.value?'Pratica consegnata nel fascicolo':'Documento caricato');
    }catch(e){showErr('u-err',errMsg(e));busy(ok)}},
+ async quote(f){const v=parseFloat(String(f.importo.value).replace(',','.'));if(!(v>=0)){showErr('q-err','Indica l\'importo totale in euro.');return}
+   const b=$('#q-ok');busy(b,'Invio…');const {error}=await S.sb.rpc('invia_preventivo',{rid:f.rid.value,p_importo:v,p_note:f.note.value.trim()});
+   if(error){busy(b);showErr('q-err',errMsg(error));return}await loadAll();closeModal();toast('Preventivo inviato al cliente')},
  async scad(f){const id=f.docId.value;try{await write(S.sb.from('documenti').update({scadenza:f.scadenza.value||null}).eq('id',id));evento(S.data.documenti[id]?.immobileId,`ha aggiornato la scadenza di «${S.data.documenti[id]?.titolo}»`);toast('Scadenza salvata')}catch(e){toast(errMsg(e))}},
  async invite(f){const email=f.email.value.trim().toLowerCase(),liv=(f.querySelector('input[name=livello]:checked')||{}).value,
    sez=[...f.querySelectorAll('input[name=sezioni]:checked')].map(c=>c.value);
@@ -517,9 +634,9 @@ const F={
    if(error){busy(b);showErr('n-err',errMsg(error));return}
    await loadAll();closeModal();S.cur=data;S.view='fascicolo';S.tab='documenti';render();toast('Fascicolo creato')},
  async req(f){const s=SERVN[f.servizio.value];
-   const prof=vals('accessi').filter(x=>x.immobileId===S.cur&&x.livello==='professionista'&&(x.sezioni||[]).includes(s.sez)&&!(x.scadenza&&daysTo(x.scadenza)<0)).map(x=>userByEmail(x.email)).find(u=>u&&u.ruolo===s.r);
-   try{await write(S.sb.from('richieste').insert({immobile_id:S.cur,servizio:s.id,sezione:s.sez,ruolo_richiesto:s.r,note:f.note.value.trim()||null,richiesto_da:S.session.user.id,assegnato_a:prof?prof.id:null,stato:prof?'lavorazione':'inviata'}));
-     evento(S.cur,`ha richiesto: ${s.n}${prof?' (affidata a '+prof.nome+')':''}`);closeModal();toast(prof?`Richiesta affidata a ${prof.nome}`:'Richiesta inviata ai professionisti partner')}
+   const prof=vals('accessi').filter(x=>x.immobileId===S.cur&&x.livello==='professionista'&&!(x.scadenza&&daysTo(x.scadenza)<0)).map(x=>userByEmail(x.email)).find(u=>u&&u.ruolo===s.r);
+   try{await write(S.sb.from('richieste').insert({immobile_id:S.cur,servizio:s.id,sezione:s.sez,ruolo_richiesto:s.r,note:f.note.value.trim()||null,richiesto_da:S.session.user.id,assegnato_a:prof?prof.id:null,stato:'inviata'}));
+     evento(S.cur,`ha chiesto un preventivo per: ${s.n}${prof?' a '+prof.nome:''}`);closeModal();toast(prof?`Richiesta inviata a ${prof.nome}: riceverai il preventivo qui`:'Richiesta inviata: riceverai il preventivo qui')}
    catch(e){toast(errMsg(e))}}
 };
 document.addEventListener('submit',e=>{const f=e.target;if(f.dataset.form&&F[f.dataset.form]){e.preventDefault();F[f.dataset.form](f)}});

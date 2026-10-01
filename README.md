@@ -11,8 +11,11 @@ Questa è la **versione dimostrativa** da far provare a proprietari e profession
 - Caricamento di PDF e immagini (fino a 20 MB) e visualizzazione dentro l'app.
 - Accessi a livelli: titolare, delegato, professionista con sezioni e scadenza. Gli inviti si fanno per email, anche a chi non è ancora registrato.
 - Link di sola lettura per banca, acquirente o inquilino, con scadenza e revoca.
-- Scadenze, servizi tecnici richiesti in app, incarichi per i professionisti, registro degli accessi.
-- Fascicolo di esempio già compilato, per chi vuole vedere subito come funziona.
+- Scadenze inserite nei documenti, registro degli accessi.
+- Servizi tecnici su preventivo: il professionista indica il costo totale, il proprietario accetta o rifiuta prima che la pratica parta.
+- Esportazione dell'intero fascicolo in ZIP con indice CSV.
+- Esempio illustrativo consultabile senza registrazione, pagina Domande frequenti.
+- Fascicolo di esempio già compilato, per chi vuole provare subito.
 
 Non sono inclusi SPID/CIE, pagamenti e notifiche email: arrivano con l'MVP.
 
@@ -31,6 +34,7 @@ Non sono inclusi SPID/CIE, pagamenti e notifiche email: arrivano con l'MVP.
 ### 1. Supabase
 1. Crea un progetto (regione **Central EU – Frankfurt**).
 2. Apri **SQL Editor › New query**, incolla tutto il contenuto di `supabase/schema.sql` e premi **Run**. Deve comparire "Success".
+   Poi, in una nuova query, esegui allo stesso modo `supabase/migrazione-01-preventivi.sql` (servizi con preventivo).
 3. In **Authentication › Sign In / Providers › Email** disattiva **Confirm email** (per la demo i tester entrano subito dopo la registrazione).
 4. In **Authentication › URL Configuration** imposta **Site URL** con l'indirizzo del sito (lo avrai al punto 3).
 5. In **Project Settings › API** copia **Project URL** e **anon public key** e incollali in `config.js`.

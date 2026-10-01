@@ -3,4 +3,7 @@
 window.CASAID_CONFIG = {
   SUPABASE_URL: 'https://vesdhonnqjicdtmqcglo.supabase.co',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZlc2Rob25ucWppY2R0bXFjZ2xvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3ODAzNTQsImV4cCI6MjEwNjM1NjM1NH0.YVErR6PEcRtXOjJAS53KKEasAmC_jhm7Te4P6sdpu8U'
+  // Facoltativi: compaiono nella pagina Domande frequenti. Lasciali vuoti finché non sono decisi.
+  , GESTORE: ''
+  , CONTATTO: ''
 };
