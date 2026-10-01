@@ -102,6 +102,9 @@ svg.i{width:18px;height:18px;flex:none}
 .bar-prog i{display:block;height:100%;background:var(--brand);border-radius:9px}
 .empty{padding:32px;text-align:center;display:flex;flex-direction:column;gap:12px;align-items:center}
 .section-t{font-size:20px;margin:32px 0 12px}
+.person.req{grid-template-columns:minmax(0,1fr) auto}
+.req-acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:620px){.person.req{grid-template-columns:minmax(0,1fr)}.req-acts{justify-content:flex-start}}
 
 /* fascicolo */
 .fhead{padding:24px;display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
@@ -110,7 +113,7 @@ svg.i{width:18px;height:18px;flex:none}
 .fhead .acts{display:flex;gap:10px;flex-wrap:wrap}
 .comp{flex:0 1 220px;min-width:180px;display:flex;flex-direction:column;gap:6px}
 .comp b{font-size:26px}
-@media (max-width:620px){.fhead{flex-direction:column}.comp{flex:none;width:100%}.fhead h1{font-size:25px}}
+@media (max-width:620px){.fhead{flex-direction:column}.fhead .t{flex:none;width:100%}.comp{flex:none;width:100%}.fhead h1{font-size:25px}}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:20px 0 20px;overflow-x:auto}
 .tab{background:none;border:0;border-bottom:3px solid transparent;padding:10px 14px;font-weight:600;color:var(--ink-2);cursor:pointer;white-space:nowrap}
 .tab[aria-selected="true"]{color:var(--brand);border-bottom-color:var(--brand)}

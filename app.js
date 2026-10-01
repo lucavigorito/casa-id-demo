@@ -256,10 +256,10 @@ function tabServizi(i,a){
   <div class="card list">${rs.map(r=>{const s=SERVN[r.servizio]||{n:r.servizio},st=RSTATO[r.stato]||['',''];
     const acts=own&&r.stato==='preventivo'?`<button class="btn btn-p btn-sm" data-act="qok" data-id="${esc(r.id)}">Accetta</button><button class="btn btn-g btn-sm" data-act="qno" data-id="${esc(r.id)}">Rifiuta</button>`:'';
     const canc=own&&['inviata','preventivo'].includes(r.stato)?`<button class="btn btn-g btn-sm" data-act="qcancel" data-id="${esc(r.id)}">Annulla</button>`:'';
-    return `<div class="person" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><b>${esc(s.n)}</b> <span class="pill ${st[1]}">${st[0]}</span>
+    return `<div class="person req"><div style="min-width:0"><b>${esc(s.n)}</b> <span class="pill ${st[1]}">${st[0]}</span>
       <p class="muted" style="font-size:13px">Richiesta da ${esc(uname(r.richiestoDa))} il ${fmt(r.createdAt)}${r.assegnatoA?' · '+esc(uname(r.assegnatoA)):''}${r.note?' · «'+esc(r.note)+'»':''}</p>
       ${r.preventivoImporto!=null&&r.stato!=='inviata'?`<p style="font-size:14px;margin-top:4px">Preventivo: <b>${euro(r.preventivoImporto)}</b> totali${r.preventivoNote?' · '+esc(r.preventivoNote):''}</p>`:''}</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${acts}${canc}</div></div>`}).join('')||'<div class="empty"><p class="lead">Nessuna richiesta finora.</p></div>'}</div>`;
+      <div class="req-acts">${acts}${canc}</div></div>`}).join('')||'<div class="empty"><p class="lead">Nessuna richiesta finora.</p></div>'}</div>`;
 }
 function tabAccessi(i,a){
   const order=['titolare','delegato','professionista'];
@@ -283,12 +283,12 @@ function incRow(r){const s=SERVN[r.servizio]||{n:r.servizio},im=S.data.immobili[
   const act=r.stato==='lavorazione'&&mine?`<button class="btn btn-p btn-sm" data-act="deliver" data-id="${esc(r.id)}">${I.up} Consegna</button>`
     :r.stato==='preventivo'&&mine?`<button class="btn btn-s btn-sm" data-act="quote" data-id="${esc(r.id)}">Modifica preventivo</button>`
     :`<button class="btn btn-p btn-sm" data-act="quote" data-id="${esc(r.id)}">Invia preventivo</button>`;
-  return `<div class="person" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><b>${esc(s.n)}</b> <span class="pill ${st[1]}">${r.stato==='preventivo'&&mine?'In attesa del cliente':st[0]}</span><p class="muted" style="font-size:13px">${im?esc(im.tipo+' · '+im.indirizzo+', '+(im.comune||'')):'Immobile di un cliente: l\'indirizzo è visibile dopo l\'accettazione'} · richiesta il ${fmt(r.createdAt)}${r.note?' · «'+esc(r.note)+'»':''}</p>${r.preventivoImporto!=null&&mine?`<p style="font-size:14px">Tuo preventivo: <b>${euro(r.preventivoImporto)}</b></p>`:''}</div>
-  <div style="display:flex;gap:6px;flex-wrap:wrap">${act}</div></div>`}
+  return `<div class="person req"><div style="min-width:0"><b>${esc(s.n)}</b> <span class="pill ${st[1]}">${r.stato==='preventivo'&&mine?'In attesa del cliente':st[0]}</span><p class="muted" style="font-size:13px">${im?esc(im.tipo+' · '+im.indirizzo+', '+(im.comune||'')):'Immobile di un cliente: l\'indirizzo è visibile dopo l\'accettazione'} · richiesta il ${fmt(r.createdAt)}${r.note?' · «'+esc(r.note)+'»':''}</p>${r.preventivoImporto!=null&&mine?`<p style="font-size:14px">Tuo preventivo: <b>${euro(r.preventivoImporto)}</b></p>`:''}</div>
+  <div class="req-acts">${act}</div></div>`}
 function incarichiView(){const inc=incarichiMiei(),done=vals('richieste').filter(r=>r.assegnatoA===S.session.user.id&&r.stato==='consegnata');
   return `<div class="hello"><p class="eyebrow">Servizi in app</p><h1>Incarichi dai servizi</h1><p class="lead">Richieste dei proprietari per la tua categoria. Invia un preventivo con il costo totale; se il cliente accetta, ricevi l'accesso alla sezione che serve e consegni il documento nel suo fascicolo.</p></div>
   <div class="card list">${inc.map(incRow).join('')||'<div class="empty"><p class="lead">Nessun incarico da gestire in questo momento.</p></div>'}</div>
-  ${done.length?`<h2 class="section-t">Consegnati</h2><div class="card list">${done.map(r=>`<div class="person" style="grid-template-columns:minmax(0,1fr) auto"><div><b>${esc(SERVN[r.servizio]?.n||r.servizio)}</b><p class="muted" style="font-size:13px">${esc(S.data.immobili[r.immobileId]?.indirizzo||'')} · consegnato il ${fmt(r.consegnataIl)}${r.preventivoImporto!=null?' · '+euro(r.preventivoImporto):''}</p></div><span class="pill p-ok">Consegnata</span></div>`).join('')}</div>`:''}`}
+  ${done.length?`<h2 class="section-t">Consegnati</h2><div class="card list">${done.map(r=>`<div class="person req"><div><b>${esc(SERVN[r.servizio]?.n||r.servizio)}</b><p class="muted" style="font-size:13px">${esc(S.data.immobili[r.immobileId]?.indirizzo||'')} · consegnato il ${fmt(r.consegnataIl)}${r.preventivoImporto!=null?' · '+euro(r.preventivoImporto):''}</p></div><span class="pill p-ok">Consegnata</span></div>`).join('')}</div>`:''}`}
 async function loadGuest(){
   if(!S.sb||!S.guest)return;
   const {data,error}=await S.sb.rpc('guest_view',{token:S.guest});
