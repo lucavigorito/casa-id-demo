@@ -858,7 +858,7 @@ function guideView(){
  return barHtml(right)+`<main class="wrap g-wrap">
   <div class="g-head"><p class="eyebrow">Casa ID · versione demo</p><h1>${esc(g.t)}</h1>
    <div class="g-tools"><div class="tools" style="margin:0">${Object.entries(G).map(([id,x])=>`<button class="chip" data-act="guida" data-id="${id}" aria-pressed="${id===k}">${esc(x.t.replace('Vademecum del ','').replace(/^./,c=>c.toUpperCase()))}</button>`).join('')}</div>
-   <button class="btn btn-s btn-sm" data-act="gprint">Stampa o salva PDF</button></div></div>
+   <a class="btn btn-s btn-sm" href="docs/Casa-ID_Vademecum-${k}.pdf" download>Scarica il PDF</a></div></div>
   <div class="g-grid"><nav class="g-toc" aria-label="Indice"><p class="eyebrow">Indice</p>${secs.map(m=>`<button class="btn-link" data-act="goto" data-id="g-${m[1]}">${m[1]}. ${esc(m[2])}</button>`).join('')}</nav>
   <article class="g-body">${mdHtml(g.md)}</article></div></main>`;
 }
