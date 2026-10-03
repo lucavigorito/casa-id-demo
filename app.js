@@ -99,7 +99,17 @@ function acc(imId,email=myEmail()){const a=vals('accessi').find(x=>x.immobileId=
 function sezOf(a){return !a?[]:(a.livello==='professionista'?(a.sezioni||[]):SEZ.map(s=>s.id))}
 const isOwnerLike=a=>a&&(a.livello==='titolare'||a.livello==='delegato');
 const canInvite=a=>a&&(a.livello==='titolare'||(a.livello==='delegato'&&a.puoInvitare));
-function myImmobili(){return vals('immobili').filter(i=>acc(i.id)).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''))}
+/* profili: la stessa persona può avere un profilo personale e uno professionale e passare dall'uno all'altro */
+const PERS=['proprietario','familiare'];
+const arr=x=>Array.isArray(x)?x:[];
+function mieiRuoli(){const u=me();if(!u)return[];const all=[u.ruolo,...arr(u.ruoli),...arr(S.session?.user?.user_metadata?.ruoli)].filter(r=>RUOLO[r]);
+  return [all.find(r=>PERS.includes(r)),all.find(r=>PROF.includes(r))].filter(Boolean)}
+const ruoloPro=u=>u?(arr(u.ruoli).find(r=>PROF.includes(r))||u.ruolo):null;
+const RUOLO_DESC=r=>PROF.includes(r)?'I fascicoli dei clienti, il collegamento con QR code e gli incarichi arrivati dai servizi.':'I fascicoli dei tuoi immobili: documenti, scadenze, accessi e condivisioni.';
+async function setRuolo(r){const u=me();if(!u||!mieiRuoli().includes(r))return;
+  if(r!==u.ruolo){const {error}=await S.sb.from('profiles').update({ruolo:r}).eq('id',u.id);if(error){toast(errMsg(error));return}}
+  const cambia=r!==u.ruolo;S.scegli=false;closeModal();if(cambia){S.cur=null;S.view='home';await loadAll();toast('Ora usi Casa ID come '+RUOLO[r])}else render()}
+function myImmobili(){const due=mieiRuoli().length>1,pro=PROF.includes(me()?.ruolo);return vals('immobili').filter(i=>{const x=acc(i.id);return x&&(!due||(x.livello==='professionista')===pro)}).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''))}
 function docsOf(imId,a){const allow=sezOf(a);return vals('documenti').filter(d=>d.immobileId===imId&&allow.includes(d.sezione))}
 function presenza(imId){const ds=vals('documenti').filter(d=>d.immobileId===imId&&d.stato!=='richiesto');return {n:ds.length,sez:SEZ.filter(s=>ds.some(d=>d.sezione===s.id)).length}}
 function prossimaScadenza(imId,a){const ds=docsOf(imId,a).filter(d=>d.scadenza).sort((x,y)=>x.scadenza.localeCompare(y.scadenza));return ds.find(d=>daysTo(d.scadenza)>=0)||ds[ds.length-1]}
@@ -121,7 +131,7 @@ async function boot(){
   if(session)startData();
   S.sb.auth.onAuthStateChange((ev,sess)=>{
     const had=!!S.session;S.session=sess;
-    if(sess&&!had){if(S.page==='accedi')S.page=null;S.state='loading';render();startData()}
+    if(sess&&!had){S.scegli=true;if(S.page==='accedi')S.page=null;S.state='loading';render();startData()}
     if(!sess&&had){S.data=Object.fromEntries(TABLES.map(t=>[t,{}]));S.state='auth';S.cur=null;S.view='home';stopRealtime();render()}
   });
 }
@@ -144,7 +154,8 @@ function draw(){
   else if(S.page==='esempio')h=esempioView();
   else if(S.state==='auth')h=(S.page==='accedi'||S.pendingCode)?authView():landingView();
   else if(S.state==='loading'||!me())h=loading('Carico i tuoi fascicoli…');
-  else h=shell();
+  else if(S.scegli&&mieiRuoli().length>1)h=scegliView();
+  else{S.scegli=false;h=shell()}
   $('#app').innerHTML=h;
   if(fid){const el=document.getElementById(fid);if(el){el.focus();try{if(sel!=null)el.setSelectionRange(sel,sel)}catch(e){}}}
 }
@@ -179,9 +190,18 @@ function authView(){
    ${reg?'<p class="muted" style="font-size:13px">Se sei stato invitato in un fascicolo, registrati con la stessa email dell\'invito: lo troverai subito.</p>':''}
   </form></div></main>`;
 }
+function scegliView(){
+  const u=me(),nome=(u.nome||'').split(' ').filter(w=>!/\./.test(w)&&w!=='Notaio')[0]||u.nome;
+  return barHtml(`<div class="me"><button class="btn-bar" data-act="logout">Esci</button></div>`)+`<main class="wrap"><div class="scegli">
+   <p class="eyebrow">Accesso</p><h1>Ciao, ${esc(nome)}. Oggi come accedi?</h1>
+   <p class="lead">Hai due profili con la stessa email. Puoi cambiare in ogni momento dal tuo nome, in alto a destra.</p>
+   <div class="scegli-grid">${mieiRuoli().map(r=>`<button class="card scegli-card" data-act="ruolo" data-id="${r}"><span class="av r-${r}">${esc(ini(RUOLO[r]))}</span>
+     <h2>${esc(RUOLO[r])}</h2>${PROF.includes(r)&&u.studio?`<p style="font-weight:600">${esc(u.studio)}</p>`:''}<p class="muted">${RUOLO_DESC(r)}</p>
+     ${r===u.ruolo?'<span class="pill p-mute">Ultimo usato</span>':''}</button>`).join('')}</div></div></main>`;
+}
 function shell(){
   const u=me(),ims=myImmobili(),pro=PROF.includes(u.ruolo);
-  if(S.cur&&!acc(S.cur))S.cur=null;
+  if(S.cur&&!ims.some(i=>i.id===S.cur))S.cur=null;
   const inc=incarichiMiei();
   const side=`<nav class="side" aria-label="Fascicoli">
     ${pro?`<button class="btn btn-p side-scan" data-act="scan">${I.qr} Collega con QR</button>`:''}
@@ -194,7 +214,7 @@ function shell(){
   if(S.view==='incarichi'&&pro)main=incarichiView();
   else if(S.view==='fascicolo'&&S.cur)main=fascicolo();
   else main=home();
-  const right=`<div class="me"><div class="who"><b>${esc(u.nome)}</b><span>${esc(RUOLO[u.ruolo]||u.ruolo)}</span></div><button class="btn-bar" data-act="logout">Esci</button></div>`;
+  const right=`<div class="me"><button class="who who-btn" data-act="profili" title="I tuoi profili"><b>${esc(u.nome)}</b><span>${esc(RUOLO[u.ruolo]||u.ruolo)} · ${mieiRuoli().length>1?'Cambia':'Profili'}</span></button><button class="btn-bar" data-act="logout">Esci</button></div>`;
   return barHtml(right)+`<main class="wrap"><div class="layout">${side}<div>${main}</div></div></main>`;
 }
 
@@ -281,9 +301,9 @@ function tabAccessi(i,a){
   const order=['titolare','delegato','professionista'];
   const ps=vals('accessi').filter(x=>x.immobileId===i.id).sort((x,y)=>order.indexOf(x.livello)-order.indexOf(y.livello));
   const links=vals('condivisioni').filter(l=>l.immobileId===i.id&&l.attivo!==false).sort((x,y)=>(y.createdAt||'').localeCompare(x.createdAt||''));
-  const row=p=>{const u=userByEmail(p.email),ru=u?.ruolo||'proprietario',scad=p.scadenza&&daysTo(p.scadenza)<0;
+  const row=p=>{const u=userByEmail(p.email),ru=(p.livello==='professionista'?ruoloPro(u):u?.ruolo)||'proprietario',scad=p.scadenza&&daysTo(p.scadenza)<0;
     const canRev=p.livello!=='titolare'&&p.email!==myEmail()&&(a.livello==='titolare'||(canInvite(a)&&p.invitatoDa===S.session.user.id));
-    return `<div class="person"><span class="av r-${esc(ru)}">${esc(ini(u?.nome||p.email))}</span><div style="min-width:0"><b>${esc(u?.nome||p.email)}</b> ${u?badge(u.ruolo):'<span class="pill p-warn">Invito in attesa</span>'}<p class="muted" style="font-size:13px">${esc(p.email)} · ${esc(LIV[p.livello])}${p.livello==='professionista'?' · '+esc((p.sezioni||[]).map(s=>SEZN[s]).join(', ')):p.livello==='delegato'?(p.puoInvitare?' · può invitare professionisti':''):''}${p.scadenza?` · <span class="${scad?'st-crit':''}">${scad?'scaduto il':'fino al'} ${fmt(p.scadenza)}</span>`:''}${p.invitatoDa&&p.livello!=='titolare'?' · invitato da '+esc(uname(p.invitatoDa)):''}</p></div>${canRev?`<button class="btn btn-g btn-sm" data-act="revoke" data-id="${esc(p.id)}">Revoca</button>`:''}</div>`};
+    return `<div class="person"><span class="av r-${esc(ru)}">${esc(ini(u?.nome||p.email))}</span><div style="min-width:0"><b>${esc(u?.nome||p.email)}</b> ${u?badge(ru):'<span class="pill p-warn">Invito in attesa</span>'}<p class="muted" style="font-size:13px">${esc(p.email)} · ${esc(LIV[p.livello])}${p.livello==='professionista'?' · '+esc((p.sezioni||[]).map(s=>SEZN[s]).join(', ')):p.livello==='delegato'?(p.puoInvitare?' · può invitare professionisti':''):''}${p.scadenza?` · <span class="${scad?'st-crit':''}">${scad?'scaduto il':'fino al'} ${fmt(p.scadenza)}</span>`:''}${p.invitatoDa&&p.livello!=='titolare'?' · invitato da '+esc(uname(p.invitatoDa)):''}</p></div>${canRev?`<button class="btn btn-g btn-sm" data-act="revoke" data-id="${esc(p.id)}">Revoca</button>`:''}</div>`};
   const pending=ps.some(p=>!userByEmail(p.email));
   return `${pending?'<div class="note" style="margin-bottom:16px">Chi ha un invito in attesa vedrà il fascicolo appena si registra con quella email. Se un professionista non usa Casa ID, puoi caricare tu i documenti che ti ha consegnato.</div>':''}<div class="two"><section class="card"><div class="box-h"><h3>Persone con accesso</h3>${canInvite(a)?`<button class="btn btn-p btn-sm" data-act="invite">${I.plus} Invita</button>`:''}</div><div class="list">${ps.map(row).join('')}</div></section>
   <section class="card"><div class="box-h"><h3>Link di sola lettura</h3>${canInvite(a)?`<button class="btn btn-s btn-sm" data-act="glink">${I.link} Crea link</button>`:''}</div><div class="list">${links.map(l=>{const exp=daysTo(l.scadenza)<0;return `<div class="person" style="grid-template-columns:minmax(0,1fr)"><div style="min-width:0"><b>${esc(l.etichetta)}</b><p class="muted" style="font-size:13px">${esc(l.documenti&&l.documenti.length?(l.documenti.length===1?'Documento: '+(S.data.documenti[l.documenti[0]]?.titolo||'1 documento'):l.documenti.length+' documenti scelti'):(l.sezioni||[]).map(s=>SEZN[s]).join(', '))} · <span class="${exp?'st-crit':''}">${exp?'scaduto':'scade'} il ${fmt(l.scadenza)}</span></p></div><div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn btn-g btn-sm" data-act="gcopy" data-id="${esc(l.id)}">Copia link</button><button class="btn btn-g btn-sm" data-act="gprev" data-id="${esc(l.id)}">Anteprima</button>${canInvite(a)?`<button class="btn btn-g btn-sm" data-act="grevoke" data-id="${esc(l.id)}">Revoca</button>`:''}</div></div>`}).join('')||'<div class="empty"><p class="muted">Crea un link per la banca, l\'acquirente o l\'inquilino: vedono solo le sezioni che scegli, fino alla data che decidi, senza bisogno di registrarsi. Per singoli documenti usa «Condividi» dal documento o la selezione nella scheda Documenti.</p></div>'}</div></section></div>${passaggioBox(i,a)}`;
@@ -383,7 +403,7 @@ function openInvite(){
    <p class="err" id="i-err" hidden></p>`,
    `<button type="button" class="btn btn-s" data-act="close">Annulla</button><button type="submit" class="btn btn-p">Invia invito</button>`,'invite');
   const inp=$('#i-email');inp.addEventListener('input',()=>{const p=userByEmail(inp.value.trim());const h=$('#i-hint');
-    if(p){h.textContent=`${p.nome} · ${RUOLO[p.ruolo]||''}: già registrato.`;if(SEZ_DEFAULT[p.ruolo])document.querySelectorAll('input[name=sezioni]').forEach(c=>c.checked=SEZ_DEFAULT[p.ruolo].includes(c.value))}
+    if(p){const pr=ruoloPro(p);h.textContent=`${p.nome} · ${RUOLO[pr]||''}: già registrato.`;if(SEZ_DEFAULT[pr])document.querySelectorAll('input[name=sezioni]').forEach(c=>c.checked=SEZ_DEFAULT[pr].includes(c.value))}
     else h.textContent='Se non è ancora registrata, troverà il fascicolo appena crea il profilo con questa email.'});
 }
 function openGlink(){
@@ -878,6 +898,15 @@ const H={
  async qno(t){t.disabled=true;try{const {error}=await S.sb.rpc('rispondi_preventivo',{rid:t.dataset.id,accetta:false});if(error)throw error;await loadAll();toast('Preventivo rifiutato: la richiesta torna disponibile')}catch(e){toast(errMsg(e));t.disabled=false}},
  async qcancel(t){if(t.dataset.confirm!=='1'){t.dataset.confirm='1';t.textContent='Conferma annullamento';return}try{const {error}=await S.sb.rpc('annulla_richiesta',{rid:t.dataset.id});if(error)throw error;await loadAll();toast('Richiesta annullata')}catch(e){toast(errMsg(e))}},
  'auth-mode'(t){S.authMode=t.dataset.id;S.authMsg='';render()},
+ ruolo(t){setRuolo(t.dataset.id)},
+ profili(){const u=me(),rs=mieiRuoli(),hasP=rs.some(r=>PERS.includes(r)),hasQ=rs.some(r=>PROF.includes(r));
+   const list=`<div class="card list">${rs.map(r=>`<div class="person"><span class="av r-${r}">${esc(ini(RUOLO[r]))}</span><div style="min-width:0"><b>${esc(RUOLO[r])}</b><p class="muted" style="font-size:13px">${RUOLO_DESC(r)}</p></div>${r===u.ruolo?'<span class="pill p-ok">In uso</span>':`<button type="button" class="btn btn-p" data-act="ruolo" data-id="${r}">Passa a questo</button>`}</div>`).join('')}</div>`;
+   const add=hasP&&hasQ?'':`<h3 style="font-size:16px;margin:20px 0 4px">${hasQ?'Sei anche proprietario di un immobile?':'Sei anche un professionista?'}</h3>
+     <p class="muted" style="font-size:14px;margin-bottom:12px">Aggiungi il secondo profilo alla stessa email: a ogni accesso scegli con quale entrare.</p>
+     ${hasQ?'<input type="hidden" name="ruolo" value="proprietario">':`<div class="fgrid"><div class="fld"><label for="p-ruolo">Professione</label><select id="p-ruolo" name="ruolo">${PROF.map(r=>`<option value="${r}">${esc(RUOLO[r])}</option>`).join('')}</select></div>
+     <div class="fld"><label for="p-studio">Studio o società (facoltativo)</label><input id="p-studio" name="studio" value="${esc(u.studio||'')}" autocomplete="organization"></div></div>`}
+     <p class="err" id="p-err" hidden></p>`;
+   modal('I tuoi profili',list+add,add?`<button type="button" class="btn btn-s" data-act="close">Chiudi</button><button type="submit" class="btn btn-p" id="p-ok">${hasQ?'Aggiungi il profilo Proprietario':'Aggiungi il profilo professionale'}</button>`:'<button type="button" class="btn btn-s" data-act="close">Chiudi</button>',add?'addrole':'')},
  async logout(){S.page=null;await S.sb.auth.signOut()},
  open(t){S.cur=t.dataset.id;S.view='fascicolo';S.tab='documenti';S.sez='tutti';S.q='';S.selMode=false;S.sel.clear();render();scrollTo(0,0)},
  lista(){openLista()},
@@ -951,6 +980,14 @@ const F={
    const {data,error}=await S.sb.auth.signUp({email:f.email.value.trim(),password:f.pwd.value,options:{data:{nome:f.nome.value.trim(),ruolo:f.ruolo.value,studio:f.studio.value.trim()}}});
    if(error){busy(b);showErr('a-err',errMsg(error));return}
    if(!data.session){S.authMode='login';S.authMsg='Profilo creato. Controlla la posta per confermare l\'email, poi accedi.';render()}},
+ async addrole(f){const u=me(),r=f.ruolo.value,st=f.studio?f.studio.value.trim():'',b=$('#p-ok');
+   if(!RUOLO[r]||mieiRuoli().some(x=>PERS.includes(x)===PERS.includes(r))){showErr('p-err','Hai già un profilo di questo tipo.');return}
+   busy(b,'Un momento…');const ruoli=[...mieiRuoli(),r];
+   const {data,error}=await S.sb.auth.updateUser({data:{ruoli}});if(error){busy(b);showErr('p-err',errMsg(error));return}
+   if(data&&data.user&&S.session)S.session.user=data.user;
+   const up=await S.sb.from('profiles').update({ruoli,...(st?{studio:st}:{})}).eq('id',u.id);
+   if(up.error&&st)await S.sb.from('profiles').update({studio:st}).eq('id',u.id);
+   await loadAll();await setRuolo(r)},
  async upload(f){
    const ok=$('#u-ok'),titolo=f.titolo.value.trim();if(!titolo){showErr('u-err','Scrivi il titolo del documento.');return}
    const imId=f.immobileId.value,file=f.file.files&&f.file.files[0],u=me();let meta={};
@@ -1018,7 +1055,7 @@ const F={
    if(error){busy(b);showErr('n-err',errMsg(error));return}
    await loadAll();closeModal();S.cur=data;S.view='fascicolo';S.tab='documenti';render();toast('Fascicolo creato')},
  async req(f){const s=SERVN[f.servizio.value];
-   const prof=vals('accessi').filter(x=>x.immobileId===S.cur&&x.livello==='professionista'&&!(x.scadenza&&daysTo(x.scadenza)<0)).map(x=>userByEmail(x.email)).find(u=>u&&u.ruolo===s.r);
+   const prof=vals('accessi').filter(x=>x.immobileId===S.cur&&x.livello==='professionista'&&!(x.scadenza&&daysTo(x.scadenza)<0)).map(x=>userByEmail(x.email)).find(u=>u&&ruoloPro(u)===s.r);
    try{await write(S.sb.from('richieste').insert({immobile_id:S.cur,servizio:s.id,sezione:s.sez,ruolo_richiesto:s.r,note:f.note.value.trim()||null,richiesto_da:S.session.user.id,assegnato_a:prof?prof.id:null,stato:'inviata'}));
      evento(S.cur,`ha chiesto un preventivo per: ${s.n}${prof?' a '+prof.nome:''}`);closeModal();toast(prof?`Richiesta inviata a ${prof.nome}: riceverai il preventivo qui`:'Richiesta inviata: riceverai il preventivo qui')}
    catch(e){toast(errMsg(e))}}
